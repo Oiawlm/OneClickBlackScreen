@@ -264,6 +264,8 @@ internal sealed class SettingsDialog : Form
         for (int i = 0; i < swatches.Length; i++)
         {
             bool selected = ((Color)swatches[i].Tag).ToArgb() == current;
+            // Thickness + accent color keep the selection visible on any swatch.
+            swatches[i].FlatAppearance.BorderSize = selected ? 2 : 1;
             swatches[i].FlatAppearance.BorderColor = selected ? palette.Accent : palette.Border;
         }
     }

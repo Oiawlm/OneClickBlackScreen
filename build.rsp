@@ -5,9 +5,12 @@
 -r:System.Drawing.dll
 -r:System.Windows.Forms.dll
 -win32manifest:baseline\BlackScreen.manifest
+-win32icon:assets\icon-main.ico
+-resource:assets\icon-settings.ico,settings.ico
 -out:dist\一键黑屏.exe
 src\Program.cs
 src\MaskConfig.cs
 src\MaskPainter.cs
 src\OverlayForm.cs
 src\SettingsDialog.cs
+src\ThemePalette.cs

@@ -32,5 +32,11 @@ if errorlevel 1 (
     echo [FAIL] Could not deploy exe.config
     exit /b 1
 )
+rem Settings shortcut icon, deployed beside the exe (V10).
+copy /y "%REPO%assets\icon-settings.ico" "%REPO%dist\icon-settings.ico" >nul
+if errorlevel 1 (
+    echo [FAIL] Could not deploy icon-settings.ico
+    exit /b 1
+)
 echo [OK] Build succeeded: %FOUND%
 exit /b 0

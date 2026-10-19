@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -21,6 +22,78 @@ internal static class VerifySettings
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] private static extern int GetClassName(IntPtr hwnd, StringBuilder name, int maxCount);
+    [DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr hwnd, out Rect rect);
+    [DllImport("user32.dll")] private static extern bool PrintWindow(IntPtr hwnd, IntPtr hdc, uint flags);
+    [DllImport("user32.dll")] private static extern bool SetProcessDpiAwarenessContext(IntPtr value);
+    [DllImport("user32.dll")] private static extern bool SetProcessDPIAware();
+
+    // Independent copy of the theme probe (the verifier never links src\): read
+    // the registry expectation, sample the rendered dialog, never write anything.
+    private static bool AppsUseLightTheme()
+    {
+        try
+        {
+            object value = Microsoft.Win32.Registry.GetValue(
+                @"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+                "AppsUseLightTheme", null);
+            if (value is int) return (int)value != 0;
+        }
+        catch { }
+        return true;
+    }
+
+    // The dialog background must equal the palette color expected from the system
+    // app theme (light #F5F5F5 / dark #202020). Samples sit in always-empty strips:
+    // the bottom padding below the button row and the left margin (V11, T7 #19/#20).
+    private static void CheckThemeBackground(string exe)
+    {
+        bool light = AppsUseLightTheme();
+        int expected = light ? 0xF5F5F5 : 0x202020;
+        using (Process process = Start(exe, "--settings"))
+        {
+            try
+            {
+                Check(process.WaitForInputIdle(5000), "settings UI did not become ready");
+                List<IntPtr> windows = WaitForVisibleWindows(process, 5000);
+                Check(windows.Count == 1, "expected exactly one settings window, saw " + windows.Count);
+                IntPtr hwnd = windows[0];
+                Rect before, after;
+                GetWindowRect(hwnd, out before);
+                Thread.Sleep(150);
+                GetWindowRect(hwnd, out after);
+                Check(before.Left == after.Left && before.Top == after.Top
+                    && before.Right == after.Right && before.Bottom == after.Bottom,
+                    "settings window bounds did not settle");
+                Thread.Sleep(150);
+                Rect client;
+                Check(GetClientRect(hwnd, out client), "GetClientRect failed");
+                int width = client.Right - client.Left, height = client.Bottom - client.Top;
+                Check(width > 40 && height > 40, "client area too small: " + width + "x" + height);
+                using (Bitmap bitmap = new Bitmap(width, height))
+                {
+                    using (Graphics graphics = Graphics.FromImage(bitmap))
+                    {
+                        graphics.Clear(Color.Magenta);
+                        IntPtr dc = graphics.GetHdc();
+                        bool printed;
+                        try { printed = PrintWindow(hwnd, dc, 1 /* PW_CLIENTONLY */); }
+                        finally { graphics.ReleaseHdc(dc); }
+                        Check(printed, "PrintWindow failed");
+                    }
+                    Color bottom = bitmap.GetPixel(width / 2, height - 4);
+                    Color left = bitmap.GetPixel(2, height / 2);
+                    Check((bottom.ToArgb() & 0xFFFFFF) == expected,
+                        "bottom sample " + bottom + " is not the themed background #" + expected.ToString("X6"));
+                    Check((left.ToArgb() & 0xFFFFFF) == expected,
+                        "left sample " + left + " is not the themed background #" + expected.ToString("X6"));
+                }
+                CloseWindow(process, hwnd, "settings window");
+            }
+            finally { if (!process.HasExited) { process.Kill(); process.WaitForExit(); } }
+        }
+        Console.WriteLine("PASS: settings background follows AppsUseLightTheme ("
+            + (light ? "light" : "dark") + ", expected #" + expected.ToString("X6") + ")");
+    }
 
     private static void Check(bool condition, string message)
     { if (!condition) throw new Exception(message); }
@@ -89,6 +162,11 @@ internal static class VerifySettings
         try
         {
             Check(args.Length == 1, "Usage: VerifySettings.exe <exe>");
+            // A DPI-aware observer sees the PMv2 settings window in physical pixels
+            // (an unaware one gets virtualized coordinates, which would misplace the
+            // sampling points of check 4).
+            try { SetProcessDpiAwarenessContext(new IntPtr(-4)); }
+            catch (EntryPointNotFoundException) { SetProcessDPIAware(); }
 
             // 1. --settings opens exactly one normal window, alive until closed.
             using (Process process = Start(args[0], "--settings"))
@@ -150,7 +228,10 @@ internal static class VerifySettings
             }
             Console.WriteLine("PASS: unknown argument showed usage dialog, zero mask windows, exit code 0");
 
-            Console.WriteLine("PASS TOTAL: 3 settings checks");
+            // 4. The settings background follows the system app theme (read-only).
+            CheckThemeBackground(args[0]);
+
+            Console.WriteLine("PASS TOTAL: 4 settings checks (3 original + theme background)");
             return 0;
         }
         catch (Exception ex)
