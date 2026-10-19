@@ -16,9 +16,14 @@ $deskBox = 'C:\Users\Lenovo\DeskBox\DeskBox'
 if (-not (Test-Path $deskBox)) { New-Item -ItemType Directory -Path $deskBox | Out-Null }
 
 $shell = New-Object -ComObject WScript.Shell
+$iconSettings = Join-Path $distDir 'icon-settings.ico'
+if (-not (Test-Path $iconSettings)) {
+    Write-Host "[FAIL] 未找到 $iconSettings ；请先在仓库根运行 build.cmd 生成产物。"
+    exit 1
+}
 $targets = @(
-    @{ Name = '一键黑屏.lnk';     Arguments = '';            Description = '一键黑屏 v2 - 全屏遮罩' },
-    @{ Name = '一键黑屏-设置.lnk'; Arguments = '--settings'; Description = '一键黑屏 v2 - 设置' }
+    @{ Name = '一键黑屏.lnk';     Arguments = '';            IconLocation = '';                                   Description = '一键黑屏 v2 - 全屏遮罩' },
+    @{ Name = '一键黑屏-设置.lnk'; Arguments = '--settings'; IconLocation = "$iconSettings,0";                   Description = '一键黑屏 v2 - 设置' }
 )
 
 foreach ($target in $targets) {
@@ -26,17 +31,23 @@ foreach ($target in $targets) {
     $lnk = $shell.CreateShortcut($lnkPath)
     $lnk.TargetPath = $exe
     $lnk.Arguments = $target.Arguments
+    if ($target.IconLocation) { $lnk.IconLocation = $target.IconLocation }
     $lnk.WorkingDirectory = $distDir
     $lnk.Description = $target.Description
     $lnk.Save()
 
-    # 写后回读校验目标与参数（证明幂等生效）。
+    # 写后回读校验目标/参数/图标（证明幂等生效）。
+    # 未自定义图标时 WScript 回读 IconLocation 为 ',0'（空路径+索引），视同未设置。
     $check = $shell.CreateShortcut($lnkPath)
-    if ($check.TargetPath -ne $exe -or $check.Arguments -ne $target.Arguments) {
+    $readIcon = [string]$check.IconLocation
+    if ($readIcon -eq ',0') { $readIcon = '' }
+    if ($check.TargetPath -ne $exe -or $check.Arguments -ne $target.Arguments -or
+        $readIcon -ne $target.IconLocation) {
         Write-Host "[FAIL] 快捷方式校验失败: $lnkPath"
+        Write-Host ("  期望 IconLocation='{0}' 实际='{1}'" -f $target.IconLocation, $check.IconLocation)
         exit 1
     }
-    Write-Host ("[OK] {0}  ->  {1} {2}" -f $target.Name, $check.TargetPath, $check.Arguments)
+    Write-Host ("[OK] {0}  ->  {1} {2}  Icon='{3}'" -f $target.Name, $check.TargetPath, $check.Arguments, $readIcon)
 }
 
 Write-Host "[OK] install.ps1 完成（幂等，可重复运行；旧 exe 与其他文件未触碰）"
