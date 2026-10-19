@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 // Settings window opened via "--settings". Edits a working copy of MaskConfig and
@@ -30,6 +31,9 @@ internal sealed class SettingsDialog : Form
     private readonly Button tryButton = new Button();
     private MaskConfig draft;
     private float dpiScale = 1f;
+
+    [DllImport("user32.dll")]
+    private static extern int GetDpiForWindow(IntPtr hwnd);
 
     public SettingsDialog()
     {
@@ -104,7 +108,16 @@ internal sealed class SettingsDialog : Form
 
     private void LayOutControls()
     {
-        dpiScale = DeviceDpi / 96f;
+        // WinForms without an app.config DPI section reports 96 via DeviceDpi even in
+        // a PerMonitorV2 process; ask the window itself for its real monitor DPI.
+        int dpi = DeviceDpi;
+        try
+        {
+            int monitorDpi = GetDpiForWindow(Handle);
+            if (monitorDpi > 0) dpi = monitorDpi;
+        }
+        catch (EntryPointNotFoundException) { }
+        dpiScale = dpi / 96f;
         Font = new Font(FontFamily.GenericSansSerif, 9f * dpiScale, FontStyle.Regular, GraphicsUnit.Point);
         Rectangle primary = Screen.PrimaryScreen.Bounds;
         int previewHeight = (int)Math.Round(S(408) * (double)primary.Height / primary.Width);
@@ -132,6 +145,11 @@ internal sealed class SettingsDialog : Form
         tryButton.SetBounds(startX + resetWidth + cancelWidth + 2 * gap, y, tryWidth, S(32));
         saveButton.SetBounds(startX + resetWidth + cancelWidth + tryWidth + 3 * gap, y, saveWidth, S(32));
         ClientSize = new Size(x + width + S(16), y + S(32) + S(12));
+        // CenterScreen placed the form by its initial default size; re-center after
+        // the real layout so the intent holds.
+        Screen current = Screen.FromControl(this);
+        Location = new Point(current.Bounds.X + (current.Bounds.Width - Width) / 2,
+            current.Bounds.Y + (current.Bounds.Height - Height) / 2);
     }
 
     private void ApplyColor(Color color)

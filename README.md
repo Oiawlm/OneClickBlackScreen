@@ -21,7 +21,7 @@ C# WinForms 程序（.NET Framework，csc 编译，零依赖）。双击后每�
 | [src/](src/) | v1 实现源码（Program / MaskConfig / MaskPainter / OverlayForm+OverlayGroup / SettingsDialog） |
 | [verify/](verify/) + verify.cmd | 四件套验证器与全量验证入口（会闪现遮罩） |
 | [docs/VERIFY-V1.md](docs/VERIFY-V1.md) | 验证命令与输出摘要、人工验收记录、交付快照 |
-| build.cmd + build.rsp | 构建入口（产物 `dist\一键黑屏.exe`） |
+| build.cmd + build.rsp + app.config | 构建入口（产物 `dist\一键黑屏.exe` 与同名 `.exe.config`，后者启用 WinForms 逐显示器 DPI 支持） |
 | install.ps1 | 幂等同步 DeskBox 双快捷方式 |
 | 使用说明.txt | 面向最终用户的 v2 说明 |
 | `dist/` | 构建产物输出目录（不入库） |

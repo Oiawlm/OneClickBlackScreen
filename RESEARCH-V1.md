@@ -122,3 +122,8 @@
 | 25 | 采纳 | build.cmd：`%~dp0` 定位、csc 退出码检查、`-langversion:5`；中文输出名经 build.rsp 传（编码 Phase 3 实测定 UTF-8 BOM 或 GBK），弃 PowerShell 拼字方案 |
 
 净变更摘要：类型骨架不变（D7），新增 OverlayGroup 协调器约束（#1–#7）、MaskConfig 收紧为不可变+整份回退语义（#9–#16）、绘制器增缩放适配（#18–#19）、设置窗 DPI 缩放与主屏比例预览（#17/#20/#24）、验证器增 arm 场景与 golden 样例（#21–#23）、构建走 build.rsp（#25）。
+
+> **实现追记（执行窗口，2026-10-19 终验阶段）**：
+> ① #20 落地细节——`DeviceDpi` 在无 app.config DPI 节的 .NET Framework WinForms 下恒返 96，设置窗改用 `GetDpiForWindow(Handle)` 取真实逐显 DPI；同时交付 `dist\<exe>.exe.config`（`DpiAwareness=PerMonitorV2`，官方推荐的框架级启用），二者叠加使 150% 主屏设置窗为 666×851 物理像素。
+> ② 排障教训——无 DPI 感知的测量进程观测 PMv2 窗口时 `GetWindowRect` 坐标按 96/144 虚拟化，曾误判窗口被缩回；测量 PMv2 窗口必须用 DPI 感知观察者。
+> ③ 验证器补强——UI 验证器窗口等待统一为轮询（≤5s）；终验一次环境性偶发（真实键鼠输入命中 armed 遮罩导致提前退出）经 35/35 轮同款复测排除程序缺陷，详见 docs/VERIFY-V1.md §4/§6。

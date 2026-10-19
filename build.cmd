@@ -26,5 +26,11 @@ if not defined FOUND (
     echo [FAIL] No exe produced in dist
     exit /b 1
 )
+rem WinForms per-monitor DPI support config, deployed beside the exe.
+copy /y "%REPO%app.config" "%FOUND%.config" >nul
+if errorlevel 1 (
+    echo [FAIL] Could not deploy exe.config
+    exit /b 1
+)
 echo [OK] Build succeeded: %FOUND%
 exit /b 0

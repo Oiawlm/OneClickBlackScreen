@@ -60,7 +60,9 @@ internal static class VerifyMouseExit
         List<IntPtr> windows = new List<IntPtr>();
         for (int elapsed = 0; elapsed <= 5000; elapsed += 50)
         {
-            Check(!process.HasExited, "Overlay exited before showing windows");
+            if (process.HasExited)
+                throw new Exception("Overlay exited before showing windows (exit code "
+                    + process.ExitCode + "; 0 = closed by real user input mid-test)");
             windows.Clear();
             EnumWindows(delegate(IntPtr hwnd, IntPtr data)
             {
