@@ -1,11 +1,15 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Drawing;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 // Settings window opened via "--settings". Edits a working copy of MaskConfig and
 // only persists it on save; changes apply the next time the mask starts (D9).
+// The chrome follows the system light/dark app theme (V1-V4): the palette recolors
+// the existing controls in place on WM_SETTINGCHANGE (debounced), while preview,
+// swatch and mask colors always come from the configuration only.
 internal sealed class SettingsDialog : Form
 {
     private static readonly Color[] SwatchColors = new Color[]
@@ -18,6 +22,9 @@ internal sealed class SettingsDialog : Form
         Color.White
     };
 
+    private const int WM_SETTINGCHANGE = 0x001A;
+    private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+
     private readonly PreviewPanel preview;
     private readonly Button[] swatches = new Button[SwatchColors.Length];
     private readonly Button customColorButton = new Button();
@@ -29,21 +36,33 @@ internal sealed class SettingsDialog : Form
     private readonly Button cancelButton = new Button();
     private readonly Button saveButton = new Button();
     private readonly Button tryButton = new Button();
+    private readonly Timer themeTimer = new Timer();
     private MaskConfig draft;
     private float dpiScale = 1f;
+    private bool lightTheme = ThemePalette.AppsUseLightTheme();
+    private ThemePalette palette;
+    private Icon embeddedIcon;
+    private bool themeTimerDisposed;
 
     [DllImport("user32.dll")]
     private static extern int GetDpiForWindow(IntPtr hwnd);
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+    [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
+    private static extern int SetWindowTheme(IntPtr hwnd, string subApplication, string subIdList);
 
     public SettingsDialog()
     {
         draft = MaskConfig.Load();
+        palette = lightTheme ? ThemePalette.Light : ThemePalette.Dark;
         Text = "一键黑屏 · 设置";
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
         AutoScaleMode = AutoScaleMode.None;
+        ShowIcon = true;
+        LoadEmbeddedIcon();
 
         preview = new PreviewPanel(draft);
         colorLabel.Text = "遮罩颜色（点击色块选择，或自定义）：";
@@ -85,6 +104,22 @@ internal sealed class SettingsDialog : Form
         tryButton.Text = "保存并试用";
         tryButton.Click += delegate { SaveAndClose(true); };
 
+        // Theme switching: any WM_SETTINGCHANGE restarts the debounce; after it
+        // settles, reread the registry and only reapply on a real change (V3).
+        themeTimer.Interval = 150;
+        themeTimer.Tick += delegate
+        {
+            themeTimer.Stop();
+            if (IsDisposed || Disposing) return;
+            bool light = ThemePalette.AppsUseLightTheme();
+            if (light != lightTheme) ApplyTheme(light);
+        };
+        // The textbox needs its own theme on first handle creation and on any
+        // handle recreation; the parent's OnHandleCreated runs before children
+        // have handles (T7 #6).
+        textBox.HandleCreated += delegate { ApplyTextBoxTheme(); };
+        ApplyPalette();
+
         Controls.Add(preview);
         Controls.Add(colorLabel);
         for (int i = 0; i < swatches.Length; i++) Controls.Add(swatches[i]);
@@ -118,7 +153,10 @@ internal sealed class SettingsDialog : Form
         }
         catch (EntryPointNotFoundException) { }
         dpiScale = dpi / 96f;
-        Font = new Font(FontFamily.GenericSansSerif, 9f * dpiScale, FontStyle.Regular, GraphicsUnit.Point);
+        // Point sizes already scale with the window DPI (measured 9pt = 18px em at
+        // 144 DPI), so only the layout values are scaled by dpiScale - one scaling
+        // path, no double scaling (V7 erratum).
+        Font = new Font(MaskPainter.SharedFamily, 9f, FontStyle.Regular, GraphicsUnit.Point);
         Rectangle primary = Screen.PrimaryScreen.Bounds;
         int previewHeight = (int)Math.Round(S(408) * (double)primary.Height / primary.Width);
         int x = S(16);
@@ -152,10 +190,147 @@ internal sealed class SettingsDialog : Form
             current.Bounds.Y + (current.Bounds.Height - Height) / 2);
     }
 
+    private void LoadEmbeddedIcon()
+    {
+        try
+        {
+            using (Stream stream = typeof(SettingsDialog).Assembly.GetManifestResourceStream("settings.ico"))
+            {
+                if (stream == null) return;
+                embeddedIcon = new Icon(stream, SystemInformation.SmallIconSize);
+                Icon = embeddedIcon;
+            }
+        }
+        catch { }
+    }
+
+    private void ApplyTheme(bool light)
+    {
+        lightTheme = light;
+        palette = light ? ThemePalette.Light : ThemePalette.Dark;
+        ApplyPalette();
+    }
+
+    // Recolors the existing controls in place: form first, then children, then
+    // invalidate (V4). Never touches the preview content or the swatch colors.
+    private void ApplyPalette()
+    {
+        BackColor = palette.Bg;
+        ForeColor = palette.Text;
+        colorLabel.BackColor = palette.Bg;
+        colorLabel.ForeColor = palette.Text;
+        textLabel.BackColor = palette.Bg;
+        textLabel.ForeColor = palette.Text;
+        hintLabel.BackColor = palette.Bg;
+        hintLabel.ForeColor = palette.TextSecondary;
+        preview.SetFrameColor(palette.Border);
+        ThemeButton(customColorButton);
+        ThemeButton(resetButton);
+        ThemeButton(cancelButton);
+        ThemeButton(saveButton);
+        ThemeButton(tryButton);
+        for (int i = 0; i < swatches.Length; i++)
+        {
+            Color swatch = (Color)swatches[i].Tag;
+            swatches[i].FlatStyle = FlatStyle.Flat;
+            swatches[i].UseVisualStyleBackColor = false;
+            // Hover/press keep the swatch color so the candidate never shifts.
+            swatches[i].FlatAppearance.MouseOverBackColor = swatch;
+            swatches[i].FlatAppearance.MouseDownBackColor = swatch;
+        }
+        UpdateSwatchSelection();
+        ApplyTextBoxTheme();
+        if (IsHandleCreated)
+        {
+            ApplyFrameTheme();
+            Invalidate(true);
+        }
+    }
+
+    private void ThemeButton(Button button)
+    {
+        button.FlatStyle = FlatStyle.Flat;
+        button.UseVisualStyleBackColor = false;
+        button.BackColor = palette.Surface;
+        button.ForeColor = palette.Text;
+        button.FlatAppearance.MouseOverBackColor = palette.ButtonHover;
+        button.FlatAppearance.MouseDownBackColor = palette.ButtonPressed;
+        button.FlatAppearance.BorderColor = palette.Border;
+    }
+
+    private void UpdateSwatchSelection()
+    {
+        int current = draft.MaskColor.ToArgb();
+        for (int i = 0; i < swatches.Length; i++)
+        {
+            bool selected = ((Color)swatches[i].Tag).ToArgb() == current;
+            swatches[i].FlatAppearance.BorderColor = selected ? palette.Accent : palette.Border;
+        }
+    }
+
+    private void ApplyTextBoxTheme()
+    {
+        if (IsDisposed || !textBox.IsHandleCreated) return;
+        if (lightTheme)
+        {
+            // null,null restores the default theme association (T7 #8).
+            SetWindowTheme(textBox.Handle, null, null);
+            textBox.BackColor = SystemColors.Window;
+            textBox.ForeColor = SystemColors.WindowText;
+        }
+        else
+        {
+            SetWindowTheme(textBox.Handle, "DarkMode_Explorer", null);
+            textBox.BackColor = palette.Surface;
+            textBox.ForeColor = palette.Text;
+        }
+    }
+
+    private void ApplyFrameTheme()
+    {
+        if (!IsHandleCreated) return;
+        int dark = lightTheme ? 0 : 1;
+        try { DwmSetWindowAttribute(Handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref dark, 4); }
+        catch (EntryPointNotFoundException) { }
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        ApplyFrameTheme();
+    }
+
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == WM_SETTINGCHANGE && !themeTimerDisposed)
+        {
+            themeTimer.Stop();
+            themeTimer.Start();
+        }
+        base.WndProc(ref m);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            themeTimerDisposed = true;
+            themeTimer.Stop();
+            themeTimer.Dispose();
+            if (embeddedIcon != null)
+            {
+                embeddedIcon.Dispose();
+                embeddedIcon = null;
+            }
+        }
+        base.Dispose(disposing);
+    }
+
     private void ApplyColor(Color color)
     {
         draft = new MaskConfig(color, draft.MaskText);
         preview.UpdateConfig(draft);
+        UpdateSwatchSelection();
     }
 
     private void PickCustomColor()
@@ -173,6 +348,7 @@ internal sealed class SettingsDialog : Form
         draft = new MaskConfig();
         textBox.Text = "";
         preview.UpdateConfig(draft);
+        UpdateSwatchSelection();
     }
 
     private void SaveAndClose(bool tryMask)
@@ -220,10 +396,12 @@ internal sealed class SettingsDialog : Form
     private sealed class PreviewPanel : Panel
     {
         private MaskConfig preview;
+        private Color frameColor;
 
         public PreviewPanel(MaskConfig initial)
         {
             preview = initial;
+            frameColor = ThemePalette.Light.Border;
             BackColor = initial.MaskColor;
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint |
                      ControlStyles.OptimizedDoubleBuffer, true);
@@ -236,10 +414,18 @@ internal sealed class SettingsDialog : Form
             Invalidate();
         }
 
+        public void SetFrameColor(Color value)
+        {
+            frameColor = value;
+            Invalidate();
+        }
+
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
             MaskPainter.DrawText(e.Graphics, ClientRectangle, preview);
+            using (Pen pen = new Pen(frameColor))
+                e.Graphics.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
         }
     }
 }

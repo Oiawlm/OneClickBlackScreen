@@ -10,6 +10,22 @@ internal static class MaskPainter
     private static readonly Color DarkTextColor = Color.FromArgb(0x11, 0x11, 0x11);
     private const float MinFontPixels = 12f;
 
+    // Shared CJK-capable font family for the mask text and the settings UI. Probing
+    // uses new FontFamily(name) because new Font(name, ...) silently substitutes a
+    // missing font instead of failing (V6).
+    public static readonly FontFamily SharedFamily = ResolveFamily();
+
+    private static FontFamily ResolveFamily()
+    {
+        string[] candidates = new string[] { "Microsoft YaHei UI", "Microsoft YaHei" };
+        foreach (string name in candidates)
+        {
+            try { return new FontFamily(name); }
+            catch (ArgumentException) { }
+        }
+        return FontFamily.GenericSansSerif;
+    }
+
     public static Color PickTextColor(Color background)
     {
         double backgroundLuminance = RelativeLuminance(background);
@@ -32,7 +48,7 @@ internal static class MaskPainter
             float size = area.Height / 10f;
             while (true)
             {
-                using (Font font = new Font(FontFamily.GenericSansSerif, size, FontStyle.Regular, GraphicsUnit.Pixel))
+                using (Font font = new Font(SharedFamily, size, FontStyle.Regular, GraphicsUnit.Pixel))
                 {
                     SizeF measured = graphics.MeasureString(config.MaskText, font, area.Size, format);
                     if ((measured.Width <= area.Width && measured.Height <= area.Height) || size <= MinFontPixels)
