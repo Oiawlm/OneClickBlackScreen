@@ -86,5 +86,39 @@
 ## 8. 参考链接（lane A 调研精选）
 
 - 同类项目：github.com/Stonyx/BlackScreen · github.com/RG-rahul/screenDimmer · github.com/BlueBird67/BlackScreens · github.com/dhr412/privacyscreen · github.com/limbo666/Black_My_Screen · github.com/aurelitec/cinemadrape-windows（反面教材：VirtualScreen 覆盖 bug）
-- 技术依据：learn.microsoft.com/zh-cn/windows/win32/hidpi/high-dpi-desktop-application-development-on-windows（跨 DPI 窗口位图拉伸）· stackoverflow.com/a/23230570（DrawText vs DrawString）· stackoverflow.com/a/65313019 与 eskerahn.dk/?p=1779（WinForms per-monitor DPI 实践）
+- 技术依据：learn.microsoft.com/zh-cn/windows/win32/hidpi/high-dpi-desktop-application-development-on-windows（跨 DPI 窗口位图拉伸）· stackoverflow.com/a/23230570（DrawText vs DrawString）· stackoverflow.com/a/65313019 与 eskerdin.dk/?p=1779（WinForms per-monitor DPI 实践）
 - 完整清单：`C:\Users\Lenovo\.wbx\jobs\20261019-033502-5zf\overlay-research.json`；架构批判全文：同目录 `arch-critique.json`
+
+## 9. T7 评审记录（执行窗口，2026-10-19）
+
+来源：wbx codex lane（gpt-6.1-sol）批判评审，job `20261019-123959-6yy`，材料 `_probe/t7-material.txt`（冻结语义+D1–D12+文件级实现计划）。结论：方向可行（每屏一窗/单组共享 arm/closing/配置快照/共享绘制器），但存在编译阻断与生命周期缺陷，先修订后实施。逐条裁决（编号=评审意见序）：
+
+| # | 裁决 | 修订要点 |
+|---|---|---|
+| 1 | 采纳 | `ApplicationContext` 无 `BeginInvoke`：钩子回调经存活窗体（`SelectInvoker`：优先光标所在窗，回退任一有句柄未释放窗）投递；无窗可用则同步 `CloseAll` |
+| 2 | 采纳 | 关闭计数单入口（`OverlayForm.OnFormClosed→NotifyFormClosed`）；`Finish()` 加一次性 `finished` 保护 |
+| 3 | 采纳 | `OnFormClosing→NotifyFormClosing`：任一遮罩窗开始关闭（含 WM_CLOSE 等外部路径）即触发全组关闭，共用 `closing` |
+| 4 | 采纳 | 钩子委托存组实例字段（对齐 baseline readonly 字段做法），卸钩前不释放 |
+| 5 | 采纳 | `CloseAll()` 统一置 `closing` 并先停 armTimer；钩子回调包 try/catch，异常不越原生边界 |
+| 6 | 部分采纳 | 顺序定为 清理→MessageBox→ExitThread（最后一窗 FormClosed 内，模态期间无 WM_QUIT 冲突）；"调用栈完全退净"属不可观测差异，与 baseline OnShown 内弹框同级 |
+| 7 | 采纳 | 组构造 try/catch 自清理后重抛；`Dispose` 兜底（关窗/停表/卸钩）；`Main` 兜底 catch 返回 1 |
+| 8 | 采纳 | `Main` 标 `[STAThread]`（计划笔误遗漏，与 baseline 一致） |
+| 9 | 采纳 | D3 口径修正：已知键值非法（颜色非法/文字超 200/UTF-8 非法字节）→ **整份**回默认；未知键忽略；重复键后值覆盖前值 |
+| 10 | 采纳 | 单 FileStream 句柄按字节上限 65536 读取（BOM 计入），超限整份回默认 |
+| 11 | 采纳 | 严格 UTF-8 解码（`UTF8Encoding(false,true)`），非法字节整份回默认；BOM 可有可无 |
+| 12 | 采纳 | 保存侧转义前先 CRLF→LF、孤立 CR→LF；加载侧行分割兼容 CRLF/LF |
+| 13 | 采纳 | 分割/取值用原始行；Trim 仅用于空行判断与键名 |
+| 14 | 部分采纳 | 字数口径=归一化（LF）后 UTF-16 码元；TextBox.MaxLength 仅编辑辅助，保存前最终校验 |
+| 15 | 采纳 | `MaskConfig` 不可变（get-only+构造校验：null→""、颜色强制不透明）；设置窗初稿=`MaskConfig.Load()` |
+| 16 | 采纳 | 原子写：临时文件 `FileMode.CreateNew`+finally 清理；Move 撞已存在回落 `File.Replace` |
+| 17 | 采纳 | 预览面板按主屏宽高比定尺寸；"所见即所得"承诺=同一相对布局（副屏比例差异仅换行微差），不做双屏预览 |
+| 18 | 采纳 | 绘制前 `MeasureString` 同引擎测量，超界等比缩字号（下限 12px），仍超裁剪；预览同代码路径 |
+| 19 | 采纳 | 字号公式固化 `area.Height/10f` 物理像素，不再乘 DeviceDpi/96f；布局手排像素+`AutoScaleMode.None`，不依赖 WinForms 内部 DPI 缩放 |
+| 20 | 部分采纳 | 设置窗按 `DeviceDpi/96f` 缩放布局与字体；不引入布局容器（v1 规模不值得） |
+| 21 | 部分采纳 | 完成度指标维持验收契约 InputIdle≤2000ms+实测报告；"两屏可见且已绘配置色"由 idle+400ms 后逐屏 PrintWindow 像素断言覆盖 |
+| 22 | 部分采纳 | VerifyOverlay 增"启动按住键→arm 被阻→松开→退出生效"场景与 Alt（WM_SYSKEYDOWN）键；真实物理鼠标跨屏移动不做（posted 消息在窗口过程层等价，物理自动化易碎） |
+| 23 | 部分采纳 | `Load/Save` 增可选 path 参数（缺省真实路径，常规 API 非测试补丁），VerifyConfig 全程临时路径+golden 字节样例；VerifyOverlay 用真实路径前备份后还原（字节级），残余风险=测试崩溃丢配置，记录在案 |
+| 24 | 采纳 | 保存并试用：先 Start 后 Close，Start 异常明示不关窗；遮罩已运行时试用静默自退（互斥体语义）写入使用说明 |
+| 25 | 采纳 | build.cmd：`%~dp0` 定位、csc 退出码检查、`-langversion:5`；中文输出名经 build.rsp 传（编码 Phase 3 实测定 UTF-8 BOM 或 GBK），弃 PowerShell 拼字方案 |
+
+净变更摘要：类型骨架不变（D7），新增 OverlayGroup 协调器约束（#1–#7）、MaskConfig 收紧为不可变+整份回退语义（#9–#16）、绘制器增缩放适配（#18–#19）、设置窗 DPI 缩放与主屏比例预览（#17/#20/#24）、验证器增 arm 场景与 golden 样例（#21–#23）、构建走 build.rsp（#25）。
