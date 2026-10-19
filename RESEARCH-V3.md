@@ -132,3 +132,10 @@
 codex 无异议项（原文）：B1 属性修复本身、不加键盘事件、9pt、Bg 不变、U6 砍单、色板选中态、B2 放宽至 400、主按钮六态配色与同色默认边框。
 
 **结论**：计划按上表修订后定稿，进入实现。
+
+### 8.3 实现期机制发现（第 5 查调通过程留档，2026-10-19）
+
+1. **WinForms 超类类名**：设置窗内 TextBox 的原生类名不是 "EDIT" 而是 `WindowsForms10.EDIT.app.0.34f5582_r6_ad1`（Panel 为 `.Window.8.app.*`，Static/BUTTON 同理超类化）；第 5 查子控件匹配改为大小写不敏感的 `.EDIT.` / `.WINDOW.8.` / `.STATIC.` 包含式（DumpChildren 探针实证）。
+2. **WM_SETTEXT 光标归零**：WM_SETTEXT 后原生 EDIT 光标停在位置 0 而非末尾，Enter 的 CRLF 插到了基线文本之前（实测 `\r\n\r\nV3`）；第 5 查分支 a 补 WM_GETTEXTLENGTH+EM_SETSEL 把光标放到文本末尾，符合真实打字位置。
+3. **聚焦按钮会吃掉 Enter**：分支 b 首版把焦点给窗体，WinForms 把焦点路由到活动子控件 customColorButton，Enter 被**聚焦的按钮当自身点击**（标准 Windows 行为）→ 弹出了 ColorDialog（也是 #32770 类，被"已保存"正文断言逮住，未假绿）。这反证决策表原文"非 EDIT 非 **Button** 子控件（如 preview）"的必要性：最终机制＝AttachThreadInput + SetForegroundWindow + SetFocus(preview 子控件) + 投 VK_RETURN 给 preview——§8.1 勘误的焦点机制与决策表原文的目标控件在此合流。
+4. **SetFocus(窗体) 被 WinForms 再路由**：原生 SetFocus(form) 触发 WM_SETFOCUS → ContainerControl 立即把焦点交给 ActiveControl；GetFocus() 读回核验因此必须针对实际焦点窗口。
