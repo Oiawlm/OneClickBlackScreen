@@ -80,3 +80,33 @@ MessageBox/ColorDialog 系统对话框**不跟随**深浅色（系统限制，�
 - 官方：DWMWINDOWATTRIBUTE（=20/34）/DwmSetWindowAttribute/WM_SETTINGCHANGE/《Icons in Win32》存档/vis-icons（256 上限）/WM_GETICON/GetClassLongPtr/字体清单（YaHei UI=简中 UI 字体）/typography（Segoe UI Variable 不含 CJK）——均在 learn.microsoft.com。
 - 社区：github.com/BlueMystical/Dark-Mode-Forms · github.com/RobinPerris/DarkUI · en.wikipedia.org/wiki/ICO_(file_format)。
 - 留痕：wbx job `20261019-143503-69l`（codex 批判全文 + cn 调研全文，`C:\Users\Lenovo\.wbx\jobs\20261019-143503-69l\`）；ZCode 子代理官方核查报告（本会话，结论已并入 §4）。
+
+## 9. T7 评审记录（执行窗口，2026-10-19）
+
+来源：wbx codex lane（gpt-6.1-sol）批判评审，job `20261019-150846-b9u`，材料 `_probe/t7v2-material.txt`（冻结清单+V1–V14+文件级实现计划+src 关键源码）。21 条意见（P0×2/P1×11/P2×8），逐条裁决：
+
+| # | 裁决 | 修订要点 |
+|---|---|---|
+| 1 | 采纳 | AppsUseLightTheme 读取实现：`object v=Registry.GetValue(...); return v is int ? (int)v!=0 : true;`（材料注释里 `as int? ?? true` 系笔误，不可编译） |
+| 2 | 采纳 | `Registry.GetValue` 根名必须用全称 `HKEY_CURRENT_USER\...`（缩写 "HKCU" 会抛异常被吞→恒浅色，恰被当前浅色环境掩盖）；VerifySettings 内同款独立实现，不链 src |
+| 3 | 采纳 | 回退梯子与验证器断言绑定：仅当 csc 实测拒 PNG 条目才启用梯子；启用时 VerifyIcon 查①②随产物同轮修订并记录（勘误+VERIFY-V2 定案），不允许"产物变了断言没变" |
+| 4 | 采纳+实测定案 | **V7 勘误**：本机实测（`_probe/FontProbe.cs`，PMv2 进程，主屏 144 DPI）：`GraphicsUnit.Point` 已按窗口 DPI 换算——9pt→行高 23px（em 18px），9pt×1.5=13.5pt→行高 35px（em 27px）＝双重缩放偏大 50%（v1 即此问题，35px 文字挤在 30px 标签里）。**设置窗字体定案 `new Font(共享族, 9f, Point)`（不乘 dpiScale）；布局 bounds 仍 ×dpiScale** |
+| 5 | 采纳 | 构造期仅纯配色（不碰 Handle）；DWM 属性 20 与 SetWindowTheme 只在句柄存在路径调用（OnHandleCreated/主题切换） |
+| 6 | 采纳 | TextBox 主题经其 `HandleCreated` 事件订阅应用（首次创建+句柄重建均覆盖；父 OnHandleCreated 时子句柄尚未建，WinForms 先父 OnHandleCreated 后级联子 CreateControl）；ApplyTheme 直调处守卫 IsHandleCreated |
+| 7 | 采纳 | 主题去抖用 `System.Windows.Forms.Timer`（UI 线程）；`Dispose(bool)` 统一 Stop+Dispose；WndProc 触发前查 `themeTimer.IsDisposed`，Tick 首行 Stop+查窗体 Disposing |
+| 8 | 采纳 | 浅色还原 TextBox 主题 = `SetWindowTheme(h, null, null)`（恢复默认关联，非显式 "Explorer"）；P/Invoke 声明 `CharSet.Unicode` |
+| 9 | 采纳 | 色板 FlatAppearance.MouseOver/MouseDown 设为色板本色（配置候选色，悬停不变色）；`UpdateSwatchSelection()` 统一供构造初态/色板点击/自定义颜色/恢复默认四入口调用 |
+| 10 | 采纳 | 预览 1px 边框画在 `PreviewPanel.OnPaint` 内部（base→DrawText→边框），不依赖外部 Paint 事件触发时序 |
+| 11 | 采纳 | Overlay B 精确像素门为 U1 实证回归门：必须原样跑过，不放宽容差、不以"常量未改"替代 |
+| 12 | 采纳 | 删除"零开销/恰在首次 DrawText 初始化"绝对表述；以 InputIdle 实测+A 场景像素断言为准，报告实测值 |
+| 13 | 部分采纳 | 图标选档维持 `SystemInformation.SmallIconSize`（V9 原文口径）；七档含 16/24/32，最近档足够；125%/150% 双屏标题栏与任务栏图标目检纳入 VERIFY-V2；不引入 GetSystemMetricsForDpi（决策表外机制） |
+| 14 | 采纳 | 窗体 Icon 存字段、`Dispose(bool)` 释放；加载失败置 null 静默（VerifyIcon 已证资源可解码，运行期失败由目检兜底） |
+| 15 | 采纳 | MakeIcon DIB 复制用显式行指针 `Scan0 + y*Stride` 逐行取（不假设 Stride 符号/对齐）；母题不对称（月牙偏上+齿轮右下），PNG 预览目检即行向证明 |
+| 16 | 采纳 | 查①强化：DIB 条目完整解码（BGRA→ARGB+行序翻转）为位图，要求存在 alpha>0 可见像素与非零彩色像素；PNG 条目解码尺寸==声明尺寸 |
+| 17 | 采纳 | 结构检查补全：宽高字节 ∈ {16,24,32,48,64,128,256}（256→0）且唯一、planes==1、bitCount==32、compression==0、DIB 长度==40+4wh+((w+31)/32)·4·h（long 运算防溢出）、条目互不重叠、offset 单调 |
+| 18 | 采纳 | 查②结论限定"exe 内嵌 256px PNG 载荷字节"；查③增加"托管资源字节==assets\icon-settings.ico 全量比对"（嵌入完整性）后再 Icon 解码 |
+| 19 | 采纳 | VerifySettings 像素断言比较 RGB（`ToArgb()&0xFFFFFF`），目标位图预填 Magenta 证缓冲确被绘制；检查 PrintWindow 返回值 |
+| 20 | 采纳 | 采样前窗口尺寸两次读取（间隔 100ms）稳定才采样；断言命名与 PASS 文案如实为"窗体背景色跟随 AppsUseLightTheme"；标题栏/按钮观感归人工验收（VERIFY-V2） |
+| 21 | 采纳 | build.rsp 增列 `src\ThemePalette.cs`；`struct`+readonly 字段（C#5 无 readonly struct）；全部新文件 UTF-8 BOM 核查 |
+
+> 净变更：V7 字体公式勘误（#4，实测证据）；主题应用拆"纯配色（构造期）/句柄相关（OnHandleCreated+TextBox.HandleCreated+切换）"两段（#5/#6/#7）；TextBox 浅色还原改 null,null（#8）；色板四入口选中态+本色 hover（#9）；VerifyIcon 断言全面收紧（#16/#17/#18）；VerifySettings 改 RGB 比较+稳定门（#19/#20）；其余为表述纠偏。
