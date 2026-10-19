@@ -62,3 +62,13 @@ v1 断言零改动核验：`git diff main -- verify/` 中 VerifySettings 唯一�
 - `git diff main --stat -- baseline/ src/Program.cs src/OverlayForm.cs src/MaskPainter.cs src/MaskConfig.cs` → 空（零改动）。
 - src/ 无第三方引用（build.rsp 仅系统引用）；全部改动 .cs 为 UTF-8 BOM（SettingsDialog/ThemePalette/VerifySettings 逐个 `od` 核验 ef bb bf）；C#5（csc -langversion:5 编译通过即证）。
 - 退出交互语义、settings.ini 格式、四按钮功能：五件套 VerifyOverlay/VerifyMouseExit/VerifyConfig + 第 5 查保存路径覆盖，全绿。
+
+## 7. 交付快照（Phase 5 终轮，2026-10-19 19:49）
+
+- 构建：`build.cmd` exit 0；dist 三件非空——一键黑屏.exe **244224 B**（19:49 终轮重建）、一键黑屏.exe.config 245 B、icon-settings.ico 110145 B。
+- 验证：`verify.cmd` exit 0，五件套全 PASS——VerifyConfig（18 例）/ VerifySettings（**5 查**，第 5 查回车行为双分支 PASS）/ VerifyMouseExit（5/5 按钮）/ VerifyOverlay（A–F，2 屏，max InputIdle **389 ms** ≤ 2000）/ VerifyIcon（4 查）。
+- 安装：`install.ps1` 双跑幂等（本轮再跑两次均 [OK]）。
+- U5 定论：**系统已自动圆角（像素级证据见 §4），零代码改动留档**。
+- IME 结论：机制依据 + 非组合态自动化已验；真实组合态留待用户 30 秒复核（§5）。
+- git：feature/frontend-v3 工作树干净，4 提交（ed1f8d5 勘误评审 / 848b261 源码 / e804d90 验证 / 8d7956a 文档），不自行 merge main。
+- 合并指令（用户确认后执行）：`git checkout main && git merge feature/frontend-v3`。
