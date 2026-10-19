@@ -32,6 +32,11 @@
 - **验证器**（延续其验证文化）：`VerifyBlackScreen.cs`（自动启动→断言单可见窗体、边界==VirtualScreen、TopMost、无边框、每屏 25 采样点全黑、3 个键的前台+后台键盘退出、退出码 0）；`VerifyMouseExit.cs`（鼠标退出语义）。
 - **文档**：baseline/使用说明.txt（"只覆盖画面，不关电源，不联网，删除即移除"）。
 
+> **勘误（2026-10-19，执行窗口 Phase 0 子代理逐条核对，以源码为准）**：
+> ① 条5"清理无幂等兜底"应精确为——卸钩有判空守卫（`keyboardHook != IntPtr.Zero` 且卸后置 Zero），`closing` 标志防 keydown/MouseUp 双触发；唯 `armTimer.Stop()/Dispose()` 无守卫，OnFormClosed 二次触发会抛异常。
+> ② 条6 钩子失败路径实际顺序是先 `Close()` 再 `MessageBox.Show`（§2 原文顺序颠倒）。
+> ③ 条7（及 §6.1 对应表述）"3 键前台+后台"不实：后台（非前台）钩子验证仅 F24 一轮执行（VerifyBlackScreen.cs L91-96），Escape/Shift 仅前台按键验证。v2 `VerifyOverlay` 将 3 键均覆盖前台+后台两种情形。
+
 ## 3. 环境实测事实（2026-10-19）
 
 - 编译器：仅 `C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe`（**C# 5 方言上限**）；无 .NET SDK、无 Roslyn。
