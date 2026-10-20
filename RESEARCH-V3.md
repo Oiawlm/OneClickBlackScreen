@@ -94,3 +94,48 @@
 
 - 探针：`_probe\EnterProbe.cs/.exe`（Enter 契约）、`_probe\corner-probe.ps1` + `corner-full/corner-zoom.png`（圆角待判材料，U5 复用）、`_probe\settings-v3-baseline.png`（v2 基线）、`_probe\v3-review-material.txt`（评审材料）。
 - 评审：wbx job `20261019-183036-d0y`（codex/gpt-6.1-sol，140.5s，P0×2/P1×6/P2×9 全裁决入 §3/§5）。
+
+## 8. T7 评审记录（执行窗口）
+
+### 8.1 勘误：E1 分支 b 的投递机制（EnterProbe2 实证，2026-10-19）
+
+决策表 E1 原文"同消息投给非 EDIT 非 Button 子控件（如 preview）后保存路径触发"的前提**不成立**：WinForms 对话框键路由（Form.ProcessDialogKey→AcceptButton）只在**投递目标持有键盘焦点**时参与（泵级预处理按焦点控件而非消息目标 hwnd 走链）。探针 `_probe\EnterProbe2.cs`（四场景）：
+
+- S3 投给未聚焦 Panel：0 次保存（原前提失效）；
+- S3b 投给未聚焦窗体本体：0 次保存（排除"投给窗体即可"的替代）；
+- S3c SetFocus(Panel) 后投给 Panel：保存触发 ✓（焦点是必要条件）；
+- S2 投给未聚焦 EDIT（AcceptsReturn=true）：0 保存、插入 CRLF ✓（**分支 a 前提成立**；注：未聚焦时单次 Enter 产生两个 CRLF——泵 TranslateMessage 生成的 WM_CHAR 与 EDIT 对 WM_KEYDOWN 的原生处理各插一次。断言维持"含 \r\n"，该现象如实记录、不强断言精确次数）。
+
+**修正**：分支 b 投递改为 AttachThreadInput(验证器线程↔目标 UI 线程) + SetForegroundWindow + SetFocus(设置窗) + PostMessage(WM_KEYDOWN VK_RETURN)（S3c 的跨进程等价）；语义不变——Enter 在文本框外＝保存，配置预置仍 WM_SETTEXT、备份恢复仍字节级（SnapSettings 式）。
+
+### 8.2 T7 批判评审记录（执行窗口发起，wbx job 20261019-192250-uzd，codex/gpt-6.1-sol，97.7s）
+
+材料：`_probe\v3-t7-material.txt`（冻结清单+决策表+文件级计划+源码贴段+EnterProbe2 实证）。14 条意见（P1×8/P2×6），**全部采纳**，逐条裁决：
+
+| # | 级 | 意见要点 | 裁决与落点 |
+|---|---|---|---|
+| 1 | P2 | B2 计数口径写准：n+k≤2n≤400 数学成立；补 200/201/400 纯文本、含换行 200、边界配置回显编辑四类验证 | 采纳：边界清单入 Phase 4 记录；.Length 口径维持（B2 原文） |
+| 2 | P2 | U1 色值复算浅 5.67/4.70/6.97、深 10.47/11.52/8.41，hover 达标；焦点/禁用/主题往复需实测 | 采纳：色值定案；ApplyPalette 全属性无状态重刷已保证不残留；禁用态本程序不存在（如实记录）；焦点/主题往复入目检清单 |
+| 3 | P1 | 5a "含 CRLF"有假绿（初始配置自带换行）与假红（容量满）路径 | 采纳：5a 先 WM_SETTEXT 固定短文本无换行基线并读回确认，投 Enter 后断言＝基线+新增 CRLF；EDIT 枚举须目标窗口内唯一/可见/启用，多候选即 FAIL |
+| 4 | P1 | 5a 缺观察时序：过早 WM_CLOSE 截断后续行为 | 采纳：投 Enter 后有界观察窗（轮询）内持续监视 #32770/窗口存活，期末核文件字节（区分不存在/零字节），最后才关窗核退出码，关后复查文件 |
+| 5 | P1 | 5b 焦点前置：SetFocus 返回旧焦点不能判成功；须读回 GetFocus==目标；无 DetachThreadInput 导出，脱离用 AttachThreadInput(...,false) | 采纳：附着成功 Check；GetFocus 读回核验后才投递；仅导入 AttachThreadInput，finally 中以 false 脱离 |
+| 6 | P1 | 5b "任意 #32770+字节"不足证保存：须 owner=设置窗+正文"已保存"+前置≠目标（状态迁移证明） | 采纳：#32770 须 GetWindow(GW_OWNER)==设置窗且 WM_GETTEXT 含"已保存"；前置配置与期望字节必不同 |
+| 7 | P1 | 5b 预期字节构造须受控前置+独立构造（单 #、大写色、CRLF、无 BOM） | 采纳：分支 b 前置写受控配置 color=#123456/text=V3前（UTF-8 无 BOM），期望字节独立构造，不经被测代码生成 |
+| 8 | P1 | 备份恢复须覆盖所有失败出口，残留进程先杀后恢复，恢复读回核验，失败即 FAIL | 采纳：查 5 外层 try/finally：杀残留→恢复用户字节（含不存在情形删除）→读回核验；核验失败抛错 |
+| 9 | P1 | U4 下限 120 与"按钮可见"数学冲突 | 采纳：优先级定案＝输入区+按钮完整可见优先；实现 min(比例高, cap)，cap=WorkingArea−非客户−固定 chrome；S(60) 仅作非真实显示配置的退化地板并注释声明（工作区≥~500 逻辑 px 时保证恒成立） |
+| 10 | P1 | U4 屏幕选择/单位/重入：须同一屏同单位，WorkingArea 与重定心一致 | 采纳：LayOutControls 开头取 Screen.FromControl(this) 一次，cap 与重定心共用；布局仅 Load 执行一次无重入 |
+| 11 | P1 | 第 4 查采样点不能以"既有暴露"豁免，需几何归因 | 采纳且**纠我方原判**：left 采样 (2, h/2) 的 x=2 恒在左边缘带（预览 x∈[16,424] 永不触及），bottom 采样在按钮行下 ≥16px 边缘带——v2/v3 均无暴露，原"预览超高致 left 落入预览"的担忧系我方误判，retract；结论＝U2/U4 保持边缘 ≥6px 即零扰动 |
+| 12 | P1 | Controls.Add 序不能替代显式 TabIndex（同索引回退 Z 序） | 采纳：可聚焦控件显式 TabIndex：customColorButton=0/textBox=1/reset=2/cancel=3/try=4/save=5；Add 序仍同步视觉序（双保险） |
+| 13 | P2 | U5 措辞：33 是属性编号，ROUND 值=2；HRESULT 检查；失败不碍暗色属性 | 采纳：如实测直角，attribute=33 value=2 size=4，独立 try/catch，与属性 20 并列于 ApplyFrameTheme |
+| 14 | P2 | B3/E3 证据绑定：IME 三场景（组合态提交/提交后换行/移出后保存）+主题/屏/DPI 记录 | 采纳：IME 人工验收按三场景执行记入 VERIFY-V3；记录浅/深、屏与 DPI、同一轮 dist 产物 |
+
+codex 无异议项（原文）：B1 属性修复本身、不加键盘事件、9pt、Bg 不变、U6 砍单、色板选中态、B2 放宽至 400、主按钮六态配色与同色默认边框。
+
+**结论**：计划按上表修订后定稿，进入实现。
+
+### 8.3 实现期机制发现（第 5 查调通过程留档，2026-10-19）
+
+1. **WinForms 超类类名**：设置窗内 TextBox 的原生类名不是 "EDIT" 而是 `WindowsForms10.EDIT.app.0.34f5582_r6_ad1`（Panel 为 `.Window.8.app.*`，Static/BUTTON 同理超类化）；第 5 查子控件匹配改为大小写不敏感的 `.EDIT.` / `.WINDOW.8.` / `.STATIC.` 包含式（DumpChildren 探针实证）。
+2. **WM_SETTEXT 光标归零**：WM_SETTEXT 后原生 EDIT 光标停在位置 0 而非末尾，Enter 的 CRLF 插到了基线文本之前（实测 `\r\n\r\nV3`）；第 5 查分支 a 补 WM_GETTEXTLENGTH+EM_SETSEL 把光标放到文本末尾，符合真实打字位置。
+3. **聚焦按钮会吃掉 Enter**：分支 b 首版把焦点给窗体，WinForms 把焦点路由到活动子控件 customColorButton，Enter 被**聚焦的按钮当自身点击**（标准 Windows 行为）→ 弹出了 ColorDialog（也是 #32770 类，被"已保存"正文断言逮住，未假绿）。这反证决策表原文"非 EDIT 非 **Button** 子控件（如 preview）"的必要性：最终机制＝AttachThreadInput + SetForegroundWindow + SetFocus(preview 子控件) + 投 VK_RETURN 给 preview——§8.1 勘误的焦点机制与决策表原文的目标控件在此合流。
+4. **SetFocus(窗体) 被 WinForms 再路由**：原生 SetFocus(form) 触发 WM_SETFOCUS → ContainerControl 立即把焦点交给 ActiveControl；GetFocus() 读回核验因此必须针对实际焦点窗口。

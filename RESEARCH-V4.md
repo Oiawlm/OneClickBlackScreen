@@ -90,6 +90,29 @@
 - 评审：wbx job `20261020-001201-aq4`（codex/gpt-6.1-sol，84.6s，P0×8/P1×12/P2×2 共 22 条全采纳；材料 `_probe\v4-review-material.txt`）。
 - 既有探针复用：_probe\SnapSettings（浅截）、_probe\DarkProbe（深截）、_probe\DumpLayout（几何）、_probe\settings-v3-baseline.png（v3 基线对比）。
 
-## 8. T7 评审记录（执行窗口填写）
+## 8. T7 评审记录（执行窗口 Phase 1 填写）
 
-（占位：执行窗口 Phase 1 用 wbx codex 发起批判评审，材料自包含，逐条裁决追加于此。）
+**评审**：wbx codex（job 20261020-091132-5se，gpt-6.1-sol，133s，材料 `_probe\v4-exec-review.txt`）。结论"建议修改后再执行"：P0×0 / P1×9 / P2×11。逐条裁决（R=采纳 / RD=采纳+文档化 / NV=不采纳，附理由）：
+
+1. R｜AutoScaleMode.Font 路径担忧（评 1）——源码事实：ctor 已设 `AutoScaleMode.None`，Font 变更不触发自动缩放；DPI 变化由手工 S() 单路径处理。留档此证据。
+2. R｜色板末间隙实为 16 非 8（评 2）——验算成立（末块右缘 208 vs 钮左 224）。采纳修正：自定义钮 X=(N−1)·Pitch+Size+Gap 推导，末间隙统一 8，节奏与块间一致；镜像同步。
+3. R｜150%÷1.5 不当 100% 证据（评 2）——补跑 96DPI 虚拟化实测（MeasureV4 无 awareness 档）：文本 65/37/79/37/90，PreferredSize 77/75/91/75（75=flat 逻辑最小宽），hint 203。全部选定宽（104/80/116/80/116/220）≥实测+余量，两档均安全。高对比度/回退字体登记为未覆盖条件。
+4. R｜GetProcessDpiAwareness 查的是验证器自身且 v1/v2 不分——改用 `AreDpiAwarenessContextsEqual(GetWindowDpiAwarenessContext(hwnd), -4)` 锁目标窗口上下文（第 6 查内，不动 Main 既有设置行）。
+5. R｜cap 按 Bounds 居中可越 WorkingArea——LayOutControls 末尾居中改用 `current.WorkingArea`（S2 containment 的自然收口；常规屏无 cap 时仅 Y 微移）。
+6. RD｜floor 下 containment 数学不可达——维持 S2 定案（压缩至地板+如实报错留档）；登记最低支持工作区高≈fixedChrome+nonClient+S(60)（96DPI 下约 468px），低于此为不支持环境、第 6 查 containment 将如实 FAIL。
+7. RD｜单屏启动不构成混合 DPI 覆盖——第 6 查登记"覆盖启动屏"；双屏几何由 E2 DumpLayoutDpi 双屏复算核对（探针证据，不入第 6 查——避免验证器搬动用户鼠标）。
+8. R｜settle 判定加强——第 6 查连续比对 window/client rect+抽样子控件 rect（150ms×2），非仅顶层两次。
+9. R｜Win32 GetPixel COLORREF 字节序陷阱——第 6 查统一 GDI+ `Bitmap.GetPixel().ToArgb()&0xFFFFFF`（与第 4 查同路径），不用 Win32 GetPixel。
+10. R｜PrintWindow 渲染 Button==BackColor 无先验保证——位图以 Magenta 哨兵初始化+检查返回值；失败时落盘 PNG 诊断（_probe\）。首跑实证后定案。
+11. R｜鼠标悬停外部状态致偶发 FAIL——采样前 GetCursorPos 若落按钮内则 SetCursorPos 挪开+采样后恢复（finally）；正常无人值守路径鼠标不在窗口内，零扰动。
+12. R｜GetFocus 空值假通过——改 `GetGUIThreadInfo`（目标线程，GUITHREADINFO.hwndFocus），核验返回值；不再依赖 AttachThreadInput。
+13. RD｜深色档"不可达"表述——第 6 查登记"覆盖当前主题档"；深色由 DarkProbe 截图+源码审查覆盖（与既有 E2 措辞一致）。
+14. R｜共编镜像不能证共同设计错误——即评 #16 边界的重述；独立契约面=WorkingArea containment/条带不相交/预算验算（§4.1）+E2 目检；VERIFY-V4 留"镜像锁定边界"一节。
+15. R｜RESEARCH 冲突块级融合、README 由共同祖先定——实际 merge 零冲突（main 侧只新增两文件）；流程留档。
+16. R｜终验绑定融合树/冻结门禁在最终树跑——已按"E4 第①步提前"执行：feature/style-v4 于实现前 merge main（2eaa3df），整条分支即融合态，Phase 5 终验树==最终合并树；冻结核查与 BOM 核查在最终树执行。
+17. R｜子控件计数 17 非 14——preview1+label4+edit1+swatch6+custom1+按钮4=17；按 GetParent==hwnd 过滤直系子窗，逐一唯一匹配+无多余。
+18. R｜C#5 无局部函数——复算用静态 `Scaled(int,float)` 辅助。
+19. R｜Color 替换后 PASS 行格式——`(expected.ToArgb()&0xFFFFFF).ToString("X6")`，输出格式不变。
+20. R｜镜像不证 S1 落地——第 6 查新增字体锁定：WM_GETFONT→GetObjectW(LOGFONTW) 断言 saveButton/textBox=body 档高、colorLabel/textLabel=Bold(700)、hintLabel/textHintLabel=caption 档高、FaceName=雅黑链（档高断言值以首跑实测校准，锁定两档差异本身）。
+21. R｜新增查清理与超时——using+finally 关进程；既有 WaitFor* 超时模式沿用。
+22. NV｜"副屏 DPI 往返重排"自动化入第 6 查——超出 D3 定案口径（跨屏移动不重排=登记语义 E2 评 #15）；以 E2 双屏 DumpLayoutDpi 复算覆盖，不搬验证器入副屏。
