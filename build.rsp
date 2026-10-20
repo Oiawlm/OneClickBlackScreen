@@ -13,4 +13,5 @@ src\MaskConfig.cs
 src\MaskPainter.cs
 src\OverlayForm.cs
 src\SettingsDialog.cs
+src\SettingsDialogMetrics.cs
 src\ThemePalette.cs

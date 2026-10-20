@@ -175,49 +175,73 @@ internal sealed class SettingsDialog : Form
         dpiScale = dpi / 96f;
         // Point sizes already scale with the window DPI (measured 9pt = 18px em at
         // 144 DPI), so only the layout values are scaled by dpiScale - one scaling
-        // path, no double scaling (V7 erratum).
-        Font = new Font(MaskPainter.SharedFamily, 9f, FontStyle.Regular, GraphicsUnit.Point);
-        // Semantic spacing (Win11 content basics: 16px edges, tight inside a group,
-        // loose between groups) - every row below derives from these constants.
-        int edge = S(16);
-        int labelGap = S(8);
-        int rowGap = S(10);
-        int groupGap = S(20);
-        int labelHeight = S(20);
-        int swatchRow = S(34);
-        int buttonRow = S(32);
-        int textHeight = S(80);
-        int hintHeight = S(40);
+        // path, no double scaling (V7 erratum). Font ladder from the metrics source
+        // (S1): body 10.5pt everywhere except the two caption hints; the section
+        // labels add Bold (Body Strong). Children without an explicit font follow
+        // the form font, so one shared instance per tier is enough.
+        Font bodyFont = new Font(MaskPainter.SharedFamily, SettingsDialogMetrics.BodyPointSize,
+            FontStyle.Regular, GraphicsUnit.Point);
+        Font labelFont = new Font(MaskPainter.SharedFamily, SettingsDialogMetrics.BodyPointSize,
+            FontStyle.Bold, GraphicsUnit.Point);
+        Font hintFont = new Font(MaskPainter.SharedFamily, SettingsDialogMetrics.CaptionPointSize,
+            FontStyle.Regular, GraphicsUnit.Point);
+        Font = bodyFont;
+        colorLabel.Font = labelFont;
+        textLabel.Font = labelFont;
+        hintLabel.Font = hintFont;
+        textHintLabel.Font = hintFont;
+        // Every layout number comes from SettingsDialogMetrics (D1): spacing
+        // rungs, font ladder and structural sizes are declared there once; S()
+        // per value is the only runtime derivation path.
+        int edge = S(SettingsDialogMetrics.EdgePx);
+        int labelGap = S(SettingsDialogMetrics.LabelGapPx);
+        int rowGap = S(SettingsDialogMetrics.RowGapPx);
+        int groupGap = S(SettingsDialogMetrics.GroupGapPx);
+        int labelHeight = S(SettingsDialogMetrics.LabelRowHeightPx);
+        int swatchRow = S(SettingsDialogMetrics.SwatchRowHeightPx);
+        int buttonRow = S(SettingsDialogMetrics.ButtonRowHeightPx);
+        int textHeight = S(SettingsDialogMetrics.TextBoxHeightPx);
+        int hintHeight = S(SettingsDialogMetrics.HintHeightPx);
+        int hintZone = S(SettingsDialogMetrics.HintZoneWidthPx);
+        int width = S(SettingsDialogMetrics.ContentWidthPx);
         // One screen source feeds both the preview cap and the re-center at the
         // end, so the cap is judged against the screen the dialog actually stays on.
         Screen current = Screen.FromControl(this);
         Rectangle primary = Screen.PrimaryScreen.Bounds;
-        int previewHeight = (int)Math.Round(S(408) * (double)primary.Height / primary.Width);
-        // Cap the preview so the text section and the button row always stay
-        // inside the working area; the degenerate floor only gives way on working
-        // areas under ~500 logical px, which real displays never provide.
+        int previewHeight = (int)Math.Round(width * (double)primary.Height / primary.Width);
+        // Cap the preview so the text section and the button row stay inside the
+        // working area; the floor only gives way on working areas this app does
+        // not support (S2: compress to the floor and let containment fail honestly).
         int fixedChrome = edge + labelHeight + labelGap
             + rowGap + swatchRow + groupGap
             + labelHeight + labelGap + textHeight + rowGap
             + hintHeight + groupGap + buttonRow + edge;
         int previewCap = current.WorkingArea.Height - (Height - ClientSize.Height) - fixedChrome;
-        if (previewCap < S(60)) previewCap = S(60);
+        if (previewCap < S(SettingsDialogMetrics.PreviewFloorPx))
+            previewCap = S(SettingsDialogMetrics.PreviewFloorPx);
         if (previewHeight > previewCap) previewHeight = previewCap;
         int x = edge;
         int y = edge;
-        int width = S(408);
         colorLabel.SetBounds(x, y, width, labelHeight);
         y += labelHeight + labelGap;
         preview.SetBounds(x, y, width, previewHeight);
         y += previewHeight + rowGap;
         for (int i = 0; i < swatches.Length; i++)
-            swatches[i].SetBounds(x + i * S(36), y, S(28), S(28));
-        customColorButton.SetBounds(x + swatches.Length * S(36) + S(8), y - S(3), S(116), swatchRow);
+            swatches[i].SetBounds(x + i * S(SettingsDialogMetrics.SwatchPitchPx), y,
+                S(SettingsDialogMetrics.SwatchSizePx), S(SettingsDialogMetrics.SwatchSizePx));
+        // The custom button follows the last swatch at one inner-gap distance so
+        // the row keeps a uniform rhythm, lifted so both share a center line.
+        customColorButton.SetBounds(
+            x + (swatches.Length - 1) * S(SettingsDialogMetrics.SwatchPitchPx)
+                + S(SettingsDialogMetrics.SwatchSizePx) + S(SettingsDialogMetrics.CustomButtonGapPx),
+            y - S(SettingsDialogMetrics.CustomButtonLiftPx),
+            S(SettingsDialogMetrics.CustomButtonWidthPx), swatchRow);
         y += swatchRow + groupGap;
-        // The section label and the constraint hint share a row; keep their
-        // rects disjoint so neither opaque label covers the other.
-        textLabel.SetBounds(x, y, width - S(228), labelHeight);
-        textHintLabel.SetBounds(x + width - S(220), y, S(220), labelHeight);
+        // The section label and the constraint hint share a row; the hint keeps
+        // its one-line zone on the right and the label gets the rest, so their
+        // rects stay disjoint (no opaque-label overlap).
+        textLabel.SetBounds(x, y, width - hintZone - labelGap, labelHeight);
+        textHintLabel.SetBounds(x + width - hintZone, y, hintZone, labelHeight);
         y += labelHeight + labelGap;
         textBox.SetBounds(x, y, width, textHeight);
         y += textHeight + rowGap;
@@ -225,7 +249,11 @@ internal sealed class SettingsDialog : Form
         y += hintHeight + groupGap;
         // Reset stays apart on the left; the save actions cluster on the right
         // with the primary action outermost.
-        int resetWidth = S(88), cancelWidth = S(75), tryWidth = S(104), saveWidth = S(75), gap = S(8);
+        int resetWidth = S(SettingsDialogMetrics.ResetButtonWidthPx);
+        int cancelWidth = S(SettingsDialogMetrics.CancelButtonWidthPx);
+        int tryWidth = S(SettingsDialogMetrics.TryButtonWidthPx);
+        int saveWidth = S(SettingsDialogMetrics.SaveButtonWidthPx);
+        int gap = S(SettingsDialogMetrics.ButtonGapPx);
         int rightX = x + width - saveWidth;
         resetButton.SetBounds(x, y, resetWidth, buttonRow);
         saveButton.SetBounds(rightX, y, saveWidth, buttonRow);
@@ -233,9 +261,10 @@ internal sealed class SettingsDialog : Form
         cancelButton.SetBounds(rightX - 2 * gap - tryWidth - cancelWidth, y, cancelWidth, buttonRow);
         ClientSize = new Size(x + width + edge, y + buttonRow + edge);
         // CenterScreen placed the form by its initial default size; re-center on
-        // the screen the cap was computed against so the intent holds.
-        Location = new Point(current.Bounds.X + (current.Bounds.Width - Width) / 2,
-            current.Bounds.Y + (current.Bounds.Height - Height) / 2);
+        // the working area the cap was computed against, so the whole window -
+        // capped or not - stays inside it (S2 containment).
+        Location = new Point(current.WorkingArea.X + (current.WorkingArea.Width - Width) / 2,
+            current.WorkingArea.Y + (current.WorkingArea.Height - Height) / 2);
     }
 
     private void LoadEmbeddedIcon()
