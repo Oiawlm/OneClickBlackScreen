@@ -11,6 +11,7 @@
 src\Program.cs
 src\AppInfo.cs
 src\MaskConfig.cs
+src\IdleWake.cs
 src\MaskPainter.cs
 src\OverlayForm.cs
 src\SettingsDialog.cs

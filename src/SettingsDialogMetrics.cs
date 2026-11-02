@@ -35,6 +35,17 @@ internal static class SettingsDialogMetrics
     public const int CancelButtonWidthPx = 80;  // text 37 + chrome 8 (flat minimum 75)
     public const int TryButtonWidthPx = 116;    // text 79 + chrome 8 (flat preferred 91)
     public const int SaveButtonWidthPx = 80;    // text 37 + chrome 8 (flat minimum 75)
+    // Idle auto-wake section (V5C/C8): heights reuse existing tiers (section
+    // label = LabelRowHeightPx, hint = HintHeightPx two caption line boxes, and
+    // the combo row = ButtonRowHeightPx - realized via owner-draw ItemHeight
+    // calibration because the native auto-height is font-driven and
+    // DPI-nonlinear: 28@96 / 36@144, so no S()-scaled constant can mirror it;
+    // ComboProbe evidence in _probe, mirror-locked by VerifySettings check 6).
+    // Only the combo width is new - widest item "30 分钟" at body em 14: CJK
+    // 2x14 + digits ~15 + space ~4 = ~47 text + dropdown button ~17 + insets
+    // ~14 = ~78 flat minimum; 132 on the 4px grid leaves the closed list
+    // breathing.
+    public const int IdleComboWidthPx = 132;
     // Button-row budget: 104+80+116+80 + 3x8 = 404 <= ContentWidthPx (S1 checks out with 4px spare).
 
     // Update footer (V5B): one caption-tier strip between the hint and the

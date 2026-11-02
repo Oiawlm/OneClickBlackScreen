@@ -29,25 +29,30 @@ if errorlevel 1 goto :failbuild
 if errorlevel 1 goto :failbuild
 "%CSC%" -nologo -target:exe -optimize+ -langversion:5 -r:System.dll -out:verify\bin\VerifyUpdate.exe verify\VerifyUpdate.cs src\AppInfo.cs src\Updater.cs
 if errorlevel 1 goto :failbuild
+"%CSC%" -nologo -target:exe -optimize+ -langversion:5 -r:System.dll -out:verify\bin\VerifyIdle.exe verify\VerifyIdle.cs src\IdleWake.cs
+if errorlevel 1 goto :failbuild
 popd
 
-echo [1/6] VerifyConfig
+echo [1/7] VerifyConfig
 "%BIN%\VerifyConfig.exe"
 if errorlevel 1 goto :fail
-echo [2/6] VerifySettings
+echo [2/7] VerifySettings
 "%BIN%\VerifySettings.exe" "%TARGET%"
 if errorlevel 1 goto :fail
-echo [3/6] VerifyMouseExit
+echo [3/7] VerifyMouseExit
 "%BIN%\VerifyMouseExit.exe" "%TARGET%"
 if errorlevel 1 goto :fail
-echo [4/6] VerifyOverlay
+echo [4/7] VerifyOverlay
 "%BIN%\VerifyOverlay.exe" "%TARGET%"
 if errorlevel 1 goto :fail
-echo [5/6] VerifyIcon
+echo [5/7] VerifyIcon
 "%BIN%\VerifyIcon.exe" "%TARGET%"
 if errorlevel 1 goto :fail
-echo [6/6] VerifyUpdate
+echo [6/7] VerifyUpdate
 "%BIN%\VerifyUpdate.exe"
+if errorlevel 1 goto :fail
+echo [7/7] VerifyIdle
+"%BIN%\VerifyIdle.exe" "%TARGET%"
 if errorlevel 1 goto :fail
 echo [OK] ALL VERIFIERS PASSED
 exit /b 0
