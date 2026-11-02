@@ -1,3 +1,7 @@
 _probe/
 dist/
 *.exe
+.wbx/
+.vs/
+*.pdb
+verify/bin/
