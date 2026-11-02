@@ -9,9 +9,11 @@
 -resource:assets\icon-settings.ico,settings.ico
 -out:dist\一键黑屏.exe
 src\Program.cs
+src\AppInfo.cs
 src\MaskConfig.cs
 src\MaskPainter.cs
 src\OverlayForm.cs
 src\SettingsDialog.cs
 src\SettingsDialogMetrics.cs
 src\ThemePalette.cs
+src\Updater.cs

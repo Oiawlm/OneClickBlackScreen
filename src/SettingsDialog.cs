@@ -10,6 +10,9 @@ using System.Windows.Forms;
 // The chrome follows the system light/dark app theme (V1-V4): the palette recolors
 // the existing controls in place on WM_SETTINGCHANGE (debounced), while preview,
 // swatch and mask colors always come from the configuration only.
+// Since v5 the footer strip also hosts the updater (V5B): a silent check runs on
+// load and stays quiet unless a newer release exists (U2 - this window is the
+// app's only network touchpoint; the mask never goes online).
 internal sealed class SettingsDialog : Form
 {
     private static readonly Color[] SwatchColors = new Color[]
@@ -37,8 +40,13 @@ internal sealed class SettingsDialog : Form
     private readonly Button cancelButton = new Button();
     private readonly Button saveButton = new Button();
     private readonly Button tryButton = new Button();
+    private readonly Label versionLabel = new Label();
+    private readonly Button checkUpdateButton = new Button();
+    private readonly Label updateStatusLabel = new Label();
+    private readonly Button applyUpdateButton = new Button();
     private readonly Timer themeTimer = new Timer();
     private MaskConfig draft;
+    private Updater.UpdateInfo pendingUpdate;
     private float dpiScale = 1f;
     private bool lightTheme = ThemePalette.AppsUseLightTheme();
     private ThemePalette palette;
@@ -114,14 +122,30 @@ internal sealed class SettingsDialog : Form
         saveButton.Click += delegate { SaveAndClose(false); };
         tryButton.Text = "保存并试用";
         tryButton.Click += delegate { SaveAndClose(true); };
+        versionLabel.Text = "版本 " + AppInfo.Version;
+        versionLabel.AutoSize = false;
+        versionLabel.TextAlign = ContentAlignment.MiddleLeft;
+        checkUpdateButton.Text = "检查更新";
+        checkUpdateButton.Click += delegate { BeginCheck(true); };
+        updateStatusLabel.Text = "";
+        updateStatusLabel.AutoSize = false;
+        updateStatusLabel.TextAlign = ContentAlignment.MiddleLeft;
+        updateStatusLabel.AutoEllipsis = true;
+        applyUpdateButton.Text = "立即更新";
+        applyUpdateButton.Visible = false;
+        applyUpdateButton.Click += delegate { BeginApplyUpdate(); };
         // Explicit tab order for the focusable controls, matching the visual
-        // reading order; labels, the preview and the swatches stay out of the chain.
+        // reading order; labels, the preview and the swatches stay out of the
+        // chain. The footer strip sits between the text section and the button
+        // row, so the update pair reads after the text box.
         customColorButton.TabIndex = 0;
         textBox.TabIndex = 1;
-        resetButton.TabIndex = 2;
-        cancelButton.TabIndex = 3;
-        tryButton.TabIndex = 4;
-        saveButton.TabIndex = 5;
+        checkUpdateButton.TabIndex = 2;
+        applyUpdateButton.TabIndex = 3;
+        resetButton.TabIndex = 4;
+        cancelButton.TabIndex = 5;
+        tryButton.TabIndex = 6;
+        saveButton.TabIndex = 7;
 
         // Theme switching: any WM_SETTINGCHANGE restarts the debounce; after it
         // settles, reread the registry and only reapply on a real change (V3).
@@ -147,13 +171,21 @@ internal sealed class SettingsDialog : Form
         Controls.Add(textHintLabel);
         Controls.Add(textBox);
         Controls.Add(hintLabel);
+        Controls.Add(versionLabel);
+        Controls.Add(checkUpdateButton);
+        Controls.Add(updateStatusLabel);
+        Controls.Add(applyUpdateButton);
         Controls.Add(resetButton);
         Controls.Add(cancelButton);
         Controls.Add(tryButton);
         Controls.Add(saveButton);
         AcceptButton = saveButton;
         CancelButton = cancelButton;
-        Load += delegate { LayOutControls(); };
+        Load += delegate
+        {
+            LayOutControls();
+            BeginCheck(false);
+        };
     }
 
     private int S(int value)
@@ -190,6 +222,12 @@ internal sealed class SettingsDialog : Form
         textLabel.Font = labelFont;
         hintLabel.Font = hintFont;
         textHintLabel.Font = hintFont;
+        // The update footer runs on the caption tier end to end; its two buttons
+        // take the hint font so they stay compact beside the status line.
+        versionLabel.Font = hintFont;
+        updateStatusLabel.Font = hintFont;
+        checkUpdateButton.Font = hintFont;
+        applyUpdateButton.Font = hintFont;
         // Every layout number comes from SettingsDialogMetrics (D1): spacing
         // rungs, font ladder and structural sizes are declared there once; S()
         // per value is the only runtime derivation path.
@@ -202,6 +240,7 @@ internal sealed class SettingsDialog : Form
         int buttonRow = S(SettingsDialogMetrics.ButtonRowHeightPx);
         int textHeight = S(SettingsDialogMetrics.TextBoxHeightPx);
         int hintHeight = S(SettingsDialogMetrics.HintHeightPx);
+        int footerRow = S(SettingsDialogMetrics.FooterRowHeightPx);
         int hintZone = S(SettingsDialogMetrics.HintZoneWidthPx);
         int width = S(SettingsDialogMetrics.ContentWidthPx);
         // One screen source feeds both the preview cap and the re-center at the
@@ -215,7 +254,7 @@ internal sealed class SettingsDialog : Form
         int fixedChrome = edge + labelHeight + labelGap
             + rowGap + swatchRow + groupGap
             + labelHeight + labelGap + textHeight + rowGap
-            + hintHeight + groupGap + buttonRow + edge;
+            + hintHeight + groupGap + footerRow + groupGap + buttonRow + edge;
         int previewCap = current.WorkingArea.Height - (Height - ClientSize.Height) - fixedChrome;
         if (previewCap < S(SettingsDialogMetrics.PreviewFloorPx))
             previewCap = S(SettingsDialogMetrics.PreviewFloorPx);
@@ -247,6 +286,18 @@ internal sealed class SettingsDialog : Form
         y += textHeight + rowGap;
         hintLabel.SetBounds(x, y, width, hintHeight);
         y += hintHeight + groupGap;
+        // Update footer (B7): version line, check button, one-line status, and a
+        // fixed slot for the primary apply button - hidden until a newer release
+        // exists, and revealing it moves nothing else (constant geometry).
+        int footerGap = S(SettingsDialogMetrics.ButtonGapPx);
+        int versionZone = S(SettingsDialogMetrics.FooterVersionZonePx);
+        int footerButton = S(SettingsDialogMetrics.FooterButtonWidthPx);
+        versionLabel.SetBounds(x, y, versionZone, footerRow);
+        checkUpdateButton.SetBounds(x + versionZone + footerGap, y, footerButton, footerRow);
+        updateStatusLabel.SetBounds(x + versionZone + footerButton + 2 * footerGap, y,
+            width - versionZone - 2 * footerButton - 3 * footerGap, footerRow);
+        applyUpdateButton.SetBounds(x + width - footerButton, y, footerButton, footerRow);
+        y += footerRow + groupGap;
         // Reset stays apart on the left; the save actions cluster on the right
         // with the primary action outermost.
         int resetWidth = S(SettingsDialogMetrics.ResetButtonWidthPx);
@@ -302,12 +353,18 @@ internal sealed class SettingsDialog : Form
         textHintLabel.ForeColor = palette.TextSecondary;
         hintLabel.BackColor = palette.Bg;
         hintLabel.ForeColor = palette.TextSecondary;
+        versionLabel.BackColor = palette.Bg;
+        versionLabel.ForeColor = palette.TextSecondary;
+        updateStatusLabel.BackColor = palette.Bg;
+        updateStatusLabel.ForeColor = palette.TextSecondary;
         preview.SetFrameColor(palette.Border);
         ThemeButton(customColorButton, false);
         ThemeButton(resetButton, false);
         ThemeButton(cancelButton, false);
         ThemeButton(saveButton, true);
         ThemeButton(tryButton, false);
+        ThemeButton(checkUpdateButton, false);
+        ThemeButton(applyUpdateButton, true);
         for (int i = 0; i < swatches.Length; i++)
         {
             Color swatch = (Color)swatches[i].Tag;
@@ -394,6 +451,14 @@ internal sealed class SettingsDialog : Form
     {
         base.OnHandleCreated(e);
         ApplyFrameTheme();
+        // Materialize the reserved update slot's native handle even while the
+        // button is hidden: a deferred handle would make the child window set
+        // depend on the silent check's network state, while a materialized one
+        // keeps the reserved slot a stable, observable fact (V5B).
+        if (!applyUpdateButton.IsHandleCreated)
+        {
+            IntPtr reservedSlot = applyUpdateButton.Handle;
+        }
     }
 
     protected override void WndProc(ref Message m)
@@ -485,6 +550,113 @@ internal sealed class SettingsDialog : Form
         MessageBox.Show("已保存。设置将在下一次启动遮罩时生效。",
             "一键黑屏 · 设置", MessageBoxButtons.OK, MessageBoxIcon.Information);
         Close();
+    }
+
+    // ---- update footer wiring (B7) -----------------------------------------
+    // Every network hop runs on the thread pool and results marshal back with
+    // Invoke; the settings window is the only code that ever goes online (U2).
+    // The silent check on load stays completely quiet unless a newer release
+    // exists - failures surface only through the manual button.
+
+    private void SafeInvoke(MethodInvoker action)
+    {
+        try
+        {
+            if (IsHandleCreated && !IsDisposed) Invoke(action);
+        }
+        catch (ObjectDisposedException) { }
+        catch (InvalidOperationException) { }
+    }
+
+    private void BeginCheck(bool manual)
+    {
+        checkUpdateButton.Enabled = false;
+        if (manual) updateStatusLabel.Text = "正在检查更新…";
+        System.Threading.ThreadPool.QueueUserWorkItem(delegate(object state)
+        {
+            bool userAsked = (bool)state;
+            Updater.UpdateInfo found = null;
+            string failure = null;
+            try { found = Updater.Check(AppInfo.UpdateApiBase); }
+            catch (Exception ex) { failure = ex.Message; }
+            SafeInvoke(delegate
+            {
+                if (IsDisposed) return;
+                checkUpdateButton.Enabled = true;
+                if (found != null)
+                {
+                    pendingUpdate = found;
+                    updateStatusLabel.Text = "发现新版 " + found.Tag;
+                    applyUpdateButton.Visible = true;
+                }
+                else if (userAsked)
+                {
+                    updateStatusLabel.Text = failure != null
+                        ? "检查失败：" + failure
+                        : "已是最新版本。";
+                }
+            });
+        }, manual);
+    }
+
+    private void BeginApplyUpdate()
+    {
+        if (pendingUpdate == null) return;
+        Updater.UpdateInfo update = pendingUpdate;
+        checkUpdateButton.Enabled = false;
+        applyUpdateButton.Enabled = false;
+        updateStatusLabel.Text = "正在下载…";
+        System.Threading.ThreadPool.QueueUserWorkItem(delegate
+        {
+            string downloaded = null;
+            string failure = null;
+            try
+            {
+                downloaded = Updater.DownloadAndVerify(update, delegate(int percent)
+                {
+                    SafeInvoke(delegate
+                    {
+                        if (!IsDisposed) updateStatusLabel.Text = "正在下载… " + percent + "%";
+                    });
+                });
+            }
+            catch (Exception ex) { failure = ex.Message; }
+            if (downloaded == null)
+            {
+                SafeInvoke(delegate
+                {
+                    if (IsDisposed) return;
+                    updateStatusLabel.Text = "更新失败：" + failure;
+                    checkUpdateButton.Enabled = true;
+                    applyUpdateButton.Enabled = true;
+                });
+                return;
+            }
+            // The swap itself runs on the UI thread: the dialog cannot close
+            // mid-replace, so the running exe is never left half-copied (B6).
+            SafeInvoke(delegate
+            {
+                if (IsDisposed) return;
+                try
+                {
+                    Updater.ReplaceSequence(downloaded, Application.ExecutablePath);
+                }
+                catch (Exception ex)
+                {
+                    updateStatusLabel.Text = "更新失败：" + ex.Message;
+                    checkUpdateButton.Enabled = true;
+                    applyUpdateButton.Enabled = true;
+                    return;
+                }
+                finally
+                {
+                    try { if (File.Exists(downloaded)) File.Delete(downloaded); } catch { }
+                }
+                MessageBox.Show("已更新到 " + update.Tag + "，关闭本窗口后双击主程序即运行新版。",
+                    "一键黑屏 · 设置", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Close();
+            });
+        });
     }
 
     // Renders the working copy through the shared painter at the primary screen
