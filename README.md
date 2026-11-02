@@ -20,30 +20,34 @@
 - **双击即遮罩**：不弹任何界面，所有已连接并启用的显示器立即被同一颜色覆盖，默认纯黑。
 - **任意键退出**：键盘任意键或鼠标任意键退出，内置 100 ms 防误触；只移动鼠标、滚动滚轮不会退出。
 - **颜色与文字自定义**：六种预设色块（黑 / 深灰 / 深蓝 / 墨绿 / 暗红 / 白）或任意取色；遮罩文字最多 200 字、支持换行，文字颜色自动选黑或白保证在底色上看清。
+- **空闲自动唤起（可选，默认关闭）**：无键鼠操作达到 5/10/15/30 分钟后，所有屏幕自动出现遮罩；按任意键退出并重新计时。由 Windows 计划任务每分钟静默自检驱动，无后台常驻、不需要管理员权限。
+- **应用内自动更新**：设置窗口内一键检查更新；发现新版后自动下载、SHA-256 校验并替换，无需重新下载安装包。更新检查只在设置窗口打开时进行，遮罩功能永不联网。
 - **深浅色跟随**：设置窗口自动跟随 Windows 应用深浅色模式，切换后约半秒内自动刷新，无需重开。
 - **PerMonitorV2 DPI 感知**：混合 DPI 多屏每屏独立渲染，副屏文字同样清晰。
-- **绿色零依赖**：单 exe（.NET Framework 4.8，Windows 10 1903+/11 出厂自带运行时），无需安装与管理员权限，不联网、不改系统设置。
+- **绿色零依赖**：单 exe（.NET Framework 4.8，Windows 10 1903+/11 出厂自带运行时），无需安装与管理员权限；遮罩不联网、不改系统设置（开启空闲唤起仅注册一条当前用户的计划任务，可随时关闭）。
 
 ## 🖼️ 界面一览
 
 <p align="center">
-  <img src="assets/readme/settings-light.png" alt="浅色主题下的设置窗口：遮罩颜色色块、遮罩文字输入框、实时预览与四个操作按钮" width="380">
-  <img src="assets/readme/settings-dark.png" alt="深色主题下的设置窗口：同样的布局自动切换为深色配色，主按钮变为亮蓝" width="380">
+  <img src="assets/readme/settings-light.png" alt="浅色主题下的设置窗口：遮罩颜色色块、遮罩文字输入框、自动唤起下拉框、实时预览、版本与检查更新页脚及四个操作按钮" width="340">
+  <img src="assets/readme/settings-dark.png" alt="深色主题下的设置窗口：同样的布局自动切换为深色配色，主按钮变为亮蓝" width="340">
 </p>
 
 *设置窗口跟随系统深浅色（左：浅色；右：深色）*
 
 ## 📦 下载与安装
 
-1. 打开 [Releases 页](https://github.com/Oiawlm/OneClickBlackScreen/releases)，下载最新版的 `OneClickBlackScreen.exe`。
+1. 打开 [Releases 页](https://github.com/Oiawlm/OneClickBlackScreen/releases)，下载最新版（当前 [v1.0.0](https://github.com/Oiawlm/OneClickBlackScreen/releases/tag/v1.0.0)）：
+   - `一键黑屏-v1.0.0.zip`（推荐）：含主程序 exe、同名 `.exe.config`、`icon-settings.ico` 与使用说明，解压即用；
+   - `OneClickBlackScreen.exe`：裸单文件，适合最小化使用，也可被程序内更新器直连下载。
 2. （推荐）校验文件完整性——在 PowerShell 或 cmd 中运行：
 
    ```
-   certutil -hashfile OneClickBlackScreen.exe SHA256
+   certutil -hashfile 一键黑屏-v1.0.0.zip SHA256
    ```
 
    将输出的哈希与 Releases 页 `SHA256SUMS` 文件中对应行逐字比对，一致即通过。
-3. 双击 exe 即可使用；无需安装。首次使用若弹出 SmartScreen 提示，选「仍要运行」（见下方边界说明）。
+3. 解压（或放置 exe）到任意目录，双击即可使用；无需安装。首次使用若弹出 SmartScreen 提示，选「仍要运行」（见下方边界说明）。
 
 ## 🚀 使用
 
@@ -60,10 +64,14 @@
 |---|---|
 | 遮罩颜色 | 点色块快速选，或「自定义颜色…」任意选；当前选中色块带蓝色加粗边框 |
 | 遮罩文字 | 最多 200 字，输入框内回车即换行；留空则不显示；文字颜色自动选黑/白 |
+| 自动唤起 | 选 关闭 / 5 / 10 / 15 / 30 分钟；开启后无键鼠操作达到所选时长，所有屏幕自动出现遮罩，按任意键退出并重新计时；改回「关闭」并保存即停用 |
 | 预览区 | 按主屏比例实时显示效果，所见即所得 |
+| 页脚 | 显示当前版本号与「检查更新」按钮；发现新版时出现「立即更新」，一键完成下载、SHA-256 校验与替换，完成后关闭设置窗口，下次双击主程序即新版 |
 | 按钮 | 恢复默认 / 取消 / 保存 / 保存并试用（保存后立刻启动一次遮罩供确认） |
 
-设置保存在 `%LOCALAPPDATA%\BlackScreen\settings.ini`（`color=` 与 `text=` 两行）；修改保存后，**下一次启动遮罩**时生效。不想要配置文件时直接删除它，即回纯黑默认。
+设置保存在 `%LOCALAPPDATA%\BlackScreen\settings.ini`（`color=` 与 `text=` 两行；开启自动唤起后多一行 `idle=`）；修改保存后，**下一次启动遮罩**时生效。不想要配置文件时直接删除它，即回纯黑默认（自动唤起随之回到关闭）。
+
+**自动唤起怎么工作**：保存「开启」时会以当前用户身份注册一条名为 `OneClickBlackScreen-Idle` 的 Windows 计划任务（每分钟启动一次程序自检，未到时长立即静默退出）；它无后台常驻、不联网，笔记本电池供电同样有效；改回「关闭」并保存即自动删除该任务。检测只读取本机「距上次键鼠操作的时间」，不记录任何操作内容。
 
 **退出交互**
 
@@ -79,14 +87,17 @@
 ## ⚠️ 边界与限制（如实告知）
 
 - 程序只覆盖画面，不关闭显示器电源，不暂停正在运行的程序或声音。
-- 安全桌面 / 锁屏 / UAC 提权界面无法被覆盖；TopMost 窗体之间无绝对覆盖保证。
+- 安全桌面 / 锁屏 / UAC 提权界面无法被覆盖，空闲唤起在这些界面期间也不会触发；TopMost 窗体之间无绝对覆盖保证。
+- 自动更新为单文件替换：更新检查只在设置窗口打开时联网进行（每次打开静默检查一次，也可手动点「检查更新」），只访问 GitHub 官方域名 `api.github.com`，不收集、不上报任何数据；遮罩与空闲自检**永不联网**。
+- 更新文件经 SHA-256 校验后落位，与官方发布不一致会拒绝安装；程序内下载不经浏览器，不触发 SmartScreen（杀毒软件实时扫描仍正常覆盖）。
+- 自动唤起的计划任务只属于开启它的 Windows 账户，切换账户后需在新账户下重新开启；任务由计划任务驱动，无后台常驻进程。
 - 设置中弹出的系统对话框（取色器、消息框）仍为系统浅色样式，不跟随深色，属 Windows 系统限制；高对比度主题不适配。
 - 「任意键」受系统保留组合限制；混合 DPI 副屏文字清晰度依赖每屏一窗渲染。
 - 若遮罩已在运行，「保存并试用」启动的第二个实例会静默自退（单实例机制），先退出当前遮罩再试用即可。
 - 传入未知参数时只弹用法提示，绝不进入遮罩。
-- 浏览器下载的 exe 可能触发 SmartScreen 提示（无代码签名证书所致），校验 SHA256 后选择「仍要运行」即可。
+- 浏览器下载的 exe/zip 可能触发 SmartScreen 提示（无代码签名证书所致），校验 SHA256 后选择「仍要运行」即可。
 
-**卸载**：删除程序所在文件夹（exe、同名 `.exe.config`、`icon-settings.ico` 三个文件）、快捷方式与配置文件，即完全移除，无其他残留。
+**卸载**：先在设置中把「自动唤起」改回「关闭」并保存（自动删除计划任务 `OneClickBlackScreen-Idle`），再删除程序所在文件夹（exe、同名 `.exe.config`、`icon-settings.ico`，zip 解压版还含使用说明）、快捷方式与配置文件，即完全移除。
 
 ## 🛠️ 本地开发
 
@@ -98,7 +109,7 @@ verify.cmd
 ```
 
 - `build.cmd`：用 `C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe` 直编 `src\`，产物输出到 `dist\`（csc 为 Windows 自带，无需安装任何 SDK）。
-- `verify.cmd`：编译并运行五件套验证器（VerifyConfig / VerifySettings / VerifyMouseExit / VerifyOverlay / VerifyIcon；会短暂闪现遮罩，属预期行为）。
+- `verify.cmd`：编译并运行七件套验证器（VerifyConfig / VerifySettings / VerifyMouseExit / VerifyOverlay / VerifyIcon / VerifyUpdate / VerifyIdle；会短暂闪现遮罩，属预期行为）。
 - `install.ps1`：幂等同步桌面快捷方式（双击遮罩 + 设置两个入口）。
 - `tools\MakeIcon.cs`：图标生成器（显式重新生成，构建只消费产物）。
 
@@ -111,7 +122,7 @@ verify.cmd
 | [RESEARCH-V1.md](RESEARCH-V1.md) ~ [RESEARCH-V5.md](RESEARCH-V5.md) | 各轮唯一事实源：调研结论与决策表 |
 | [PLAN-V5.md](PLAN-V5.md) | v5 轮总编排：轨道划分、波次与并行契约 |
 | [GOAL-V1-PROMPT.md](GOAL-V1-PROMPT.md) ~ [GOAL-V5D-PROMPT.md](GOAL-V5D-PROMPT.md) | 各执行窗口的 GOAL 提示词 |
-| [docs/VERIFY-V1.md](docs/VERIFY-V1.md) ~ [docs/VERIFY-V4.md](docs/VERIFY-V4.md) | 各轮验证记录：命令、输出与证据 |
+| [docs/VERIFY-V1.md](docs/VERIFY-V1.md) ~ [docs/VERIFY-V5.md](docs/VERIFY-V5.md) | 各轮验证记录：命令、输出与证据（v5 含 A/B/C 三轨交付与发布验收） |
 | [baseline/](baseline/) | v1 原始源码归档（冻结不改，行为基准） |
 
 协作铁律：双击立即出遮罩的体验冻结不变；上下文只经文件传递，不依赖会话记忆。
