@@ -82,12 +82,60 @@ Phase 2（C rebase 于合并态）冲突 3 文件＋关键自动合并 3 文件�
 
 ## 4. 正式发布（I3）
 
-（Phase 4 执行后回填）
+### 4.1 常量同源校验
+
+`src/AppInfo.cs`：`Version = "1.0.0"`（＝tag `v1.0.0`，I3 验收项）、`RepoOwner/RepoName = Oiawlm/OneClickBlackScreen`、`UpdateAssetName = "OneClickBlackScreen.exe"`（＝裸资产名，铁律 3）。发布前 `build.cmd` 最终产物重建：`[OK] Build succeeded`。
+
+### 4.2 三资产（_probe\release-v1.0.0，certutil 生成哈希）
+
+| 资产 | 大小 | SHA-256 |
+|---|---|---|
+| `OneClickBlackScreen.exe`（dist 裸产物重命名，更新器直链名） | 265,728 B | `9A93CDD573C511DABB8CA544610E77B8E7BF315F455948FB369A3E2E72629CD1` |
+| `OneClickBlackScreen-v1.0.0.zip`（label「一键黑屏 v1.0.0 完整包（exe＋config＋ico＋使用说明）」；E1 勘误后名） | 70,167 B | `00363518885CBD4EAF4C4B39919201F3306BB0DD7E4A2979C50EF4117FEF66A7` |
+| `SHA256SUMS`（上两者，`哈希␣␣文件名` 每行一条） | 182 B | — |
+
+zip 内含（下载实测回读）：`一键黑屏.exe` 265,728 B＋`一键黑屏.exe.config` 245 B＋`icon-settings.ico` 110,145 B＋`使用说明.txt` 7,855 B（内部文件名中文完好——平台限制只及资产名）。
+
+### 4.3 E1 勘误事件（如实登记，RESEARCH-V5 §8 同源）
+
+- 现象：zip 资产以中文名 `一键黑屏-v1.0.0.zip` 上传后，GitHub 返回资产名恒为 `-v1.0.0.zip`（中文字符被剥）。三次复现：Git Bash 直传、PowerShell BOM 脚本传、ASCII 名上传后 PATCH 改中文名（`\uXXXX` 转义 JSON 全 ASCII 信道）——同请求的 `label` 字段中文**完好存活**（对照实验实证），锁定为 **GitHub Releases 资产 name 字段服务端非 ASCII 消毒**（社区登记 [community #57748](https://github.com/orgs/community/discussions/57748)、[#209923](https://github.com/orgs/community/discussions/209923)），非本环境传输问题。
+- 处置（根修非补丁）：勘误登记 E1→zip 资产定名 `OneClickBlackScreen-v1.0.0.zip`（ASCII 平台可达），中文身份保留在资产 `label`（Release 页与资产名一同显示，实测渲染「一键黑屏 v1.0.0 完整包（exe＋config＋ico＋使用说明）」）；SHA256SUMS 行名与 README 下载区/校验示例同步（main 7a820a5）；坏名资产经 API 按 ID 删除后以 ASCII 名重传，digest 全程不变（同一 zip 字节）。
+- 事故中间态清理：全部经 `DELETE /releases/assets/:id`（仅删本次演练产生的坏名资产，铁律 5 范围内）。
+
+### 4.4 发布序列（原始输出摘要）
+
+```
+gh release delete v0.9.0-test --yes            → draft 连同 2 资产删除；view 复核 "release not found"
+git push origin main                            → 7639b51..dd38c19
+git tag -a v1.0.0 …; git push origin v1.0.0     → * [new tag] v1.0.0（annotated，指向 dd38c19）
+gh release create v1.0.0 …三资产 --notes-file   → https://github.com/Oiawlm/OneClickBlackScreen/releases/tag/v1.0.0
+（E1 后）资产 PATCH 改名＋SHA256SUMS 重传        → 终态 false/false/3
+```
+
+发布说明（`_probe\release-notes-v1.0.0.md`）：两项新功能、全量变更、SHA-256 教学一句，齐。
 
 ## 5. 发布后四重验收（I4）
 
-（Phase 5 执行后回填）
+1. **真端点冒烟（LatestSmoke，v1.0.0 已发布后）**：真 dist exe 打开设置窗→静默检查无声（状态行空断言）→BM_CLICK「检查更新」→`[200ms] status='已是最新版本。'`；「立即更新」保留槽物化但**不可见**（等版本不揭示）；窗口稳定 WM_CLOSE 退出码 0；截图 `_probe\v5i-latest-smoke.png`。兼证 TLS1.2/自定义 UA/releases/latest 解析/同版比较全链路对真实 GitHub 成立（B 轨留 I 的缺口补齐）。
+2. **干净重建（公开仓自足性）**：`git clone --depth 1 https://github.com/Oiawlm/OneClickBlackScreen`（临时目录 `D:\Download\Agent Vault\v5i-cleanroom`，HEAD=dd38c19）→ `build.cmd` `[OK] Build succeeded` → `verify.cmd` **七件全绿**（日志 `_probe-clean-verify.log` 于该目录：[1/7]..[7/7] 全 PASS TOTAL＋`[OK] ALL VERIFIERS PASSED`）。
+3. **SHA256SUMS 自验**：`gh release download v1.0.0` 全量重下→逐行 `certutil -hashfile` 比对（`_probe\SumsCheck.ps1`）：`MATCH OneClickBlackScreen.exe 9A93CDD5…`＋`MATCH OneClickBlackScreen-v1.0.0.zip 00363518…`＋`SUMS SELF-CHECK: all lines match`。
+4. **Release 状态**：`gh release view v1.0.0 --json isDraft,isPrerelease,assets -q '.isDraft,.isPrerelease,(.assets|length)'` → **`false false 3`**（资产名/label 见 §4.2）；`gh release view v0.9.0-test` → release not found（draft 已删）。
 
-## 6. 验收清单对照（GOAL §5 逐项）
+## 6. 验收清单对照（GOAL §5 逐项，全部实核）
 
-（Phase 5 完成后回填终表）
+| # | 验收项 | 结果 | 证据 |
+|---|---|---|---|
+| 1 | main 两个 `--no-ff` 合并点＋status 干净 | ✅ | `6dc2530`（C 合并）＋`47ebd25`（B 合并）；`git status --short`＝0 行 |
+| 2 | 合并态 `verify.cmd` 七件 `[OK] ALL VERIFIERS PASSED` | ✅ | §1.3（`_probe\verify-v5i-main.log`，[1/7]..[7/7]） |
+| 3 | release view → `false false 3` | ✅ | §5.4 |
+| 4 | `gh release view v0.9.0-test` 失败 | ✅ | §4.4（"release not found"） |
+| 5 | 远端含 `v1.0.0`；README 下载节指向该 Release＋新截图已替换 | ✅ | `git ls-remote --tags origin` 含 `v1.0.0`（annotated＋peel 两行）；README 下载区含 v1.0.0 直链与三资产名；settings-light/dark.png 已为融合态新图（dd38c19） |
+| 6 | 使用说明.txt 含「自动更新」「自动唤起」两节＋隐私口径 | ✅ | 两节齐（10 处关键词命中）；隐私口径行 82–84（api.github.com/不收集/遮罩永不联网） |
+| 7 | docs/VERIFY-V5.md 存在：七件全绿＋diff 审计＋四重验收证据 | ✅ | 本文件 §1–§5 |
+| 8 | `schtasks /query /tn OneClickBlackScreen-Idle` 退出码 1 | ✅ | §5 全部验收后实测 exit=1 |
+
+**收尾**：全部提交已推送（main→`7a820a5`，tag `v1.0.0`→dd38c19）；本地 feature 分支保留未删（D 波离线 bundle 保全）；RESEARCH-V5 §8 已登记 E1 勘误。
+
+---
+
+**轨道 I 完成**（PLAN-V5 §3 波 2）：v1.0.0 已正式发布并通过四重验收；后续衔接＝用户开 D 窗口（GOAL-V5D-PROMPT.md）。
