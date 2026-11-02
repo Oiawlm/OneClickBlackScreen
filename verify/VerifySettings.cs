@@ -13,6 +13,9 @@ using System.Threading;
 // co-compiled with src\ThemePalette.cs and src\SettingsDialogMetrics.cs (D2):
 // colors and layout values stay single-sourced, while the layout algorithm is
 // mirrored here as the observer side of the mirror-lock test (D3, check 6).
+// Since v5 the mirror also covers the update footer (V5B): 21 direct children,
+// and the status static is matched by elimination because its text depends on
+// the live silent check.
 internal static class VerifySettings
 {
     private const int WM_CLOSE = 0x0010;
@@ -246,6 +249,7 @@ internal static class VerifySettings
                 int buttonRow = Scaled(SettingsDialogMetrics.ButtonRowHeightPx, scale);
                 int textHeight = Scaled(SettingsDialogMetrics.TextBoxHeightPx, scale);
                 int hintHeight = Scaled(SettingsDialogMetrics.HintHeightPx, scale);
+                int footerRow = Scaled(SettingsDialogMetrics.FooterRowHeightPx, scale);
                 int hintZone = Scaled(SettingsDialogMetrics.HintZoneWidthPx, scale);
                 int width = Scaled(SettingsDialogMetrics.ContentWidthPx, scale);
                 int swatchPitch = Scaled(SettingsDialogMetrics.SwatchPitchPx, scale);
@@ -257,7 +261,7 @@ internal static class VerifySettings
                 int fixedChrome = edge + labelHeight + labelGap
                     + rowGap + swatchRow + groupGap
                     + labelHeight + labelGap + textHeight + rowGap
-                    + hintHeight + groupGap + buttonRow + edge;
+                    + hintHeight + groupGap + footerRow + groupGap + buttonRow + edge;
                 int previewCap = current.WorkingArea.Height - nonClient - fixedChrome;
                 if (previewCap < Scaled(SettingsDialogMetrics.PreviewFloorPx, scale))
                     previewCap = Scaled(SettingsDialogMetrics.PreviewFloorPx, scale);
@@ -282,11 +286,23 @@ internal static class VerifySettings
                 y += textHeight + rowGap;
                 expected.Add("hint label", new int[] { x, y, width, hintHeight });
                 y += hintHeight + groupGap;
+                // Update footer (V5B): same formula as LayOutControls; the apply
+                // button's slot is always expected, hidden or not - invisible
+                // controls still carry their laid-out rectangle, so the mirror
+                // stays deterministic whatever the silent check found.
+                int versionZone = Scaled(SettingsDialogMetrics.FooterVersionZonePx, scale);
+                int footerButton = Scaled(SettingsDialogMetrics.FooterButtonWidthPx, scale);
+                int buttonGap = Scaled(SettingsDialogMetrics.ButtonGapPx, scale);
+                expected.Add("version label", new int[] { x, y, versionZone, footerRow });
+                expected.Add("check", new int[] { x + versionZone + buttonGap, y, footerButton, footerRow });
+                expected.Add("status", new int[] { x + versionZone + footerButton + 2 * buttonGap, y,
+                    width - versionZone - 2 * footerButton - 3 * buttonGap, footerRow });
+                expected.Add("apply", new int[] { x + width - footerButton, y, footerButton, footerRow });
+                y += footerRow + groupGap;
                 int resetWidth = Scaled(SettingsDialogMetrics.ResetButtonWidthPx, scale);
                 int cancelWidth = Scaled(SettingsDialogMetrics.CancelButtonWidthPx, scale);
                 int tryWidth = Scaled(SettingsDialogMetrics.TryButtonWidthPx, scale);
                 int saveWidth = Scaled(SettingsDialogMetrics.SaveButtonWidthPx, scale);
-                int buttonGap = Scaled(SettingsDialogMetrics.ButtonGapPx, scale);
                 int rightX = x + width - saveWidth;
                 expected.Add("reset", new int[] { x, y, resetWidth, buttonRow });
                 expected.Add("save", new int[] { rightX, y, saveWidth, buttonRow });
@@ -498,6 +514,8 @@ internal static class VerifySettings
             if (child.Text == "取消") return "cancel";
             if (child.Text == "保存并试用") return "try";
             if (child.Text == "保存") return "save";
+            if (child.Text == "检查更新") return "check";
+            if (child.Text == "立即更新") return "apply";
             return "button?'" + Truncate(child.Text) + "'";
         }
         if (IsStaticClass(child.Class))
@@ -506,7 +524,11 @@ internal static class VerifySettings
             if (child.Text.StartsWith("遮罩文字")) return "text label";
             if (child.Text.StartsWith("最多")) return "text hint";
             if (child.Text.StartsWith("配置文件")) return "hint label";
-            return "static?'" + Truncate(child.Text) + "'";
+            if (child.Text.StartsWith("版本")) return "version label";
+            // The one remaining static is the update status line; its text
+            // varies with the network state of the silent check (V5B), so it is
+            // identified by elimination and pinned by the rectangle assertion.
+            return "status";
         }
         return "unknown " + child.Class;
     }
