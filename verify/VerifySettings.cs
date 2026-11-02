@@ -13,9 +13,9 @@ using System.Threading;
 // co-compiled with src\ThemePalette.cs and src\SettingsDialogMetrics.cs (D2):
 // colors and layout values stay single-sourced, while the layout algorithm is
 // mirrored here as the observer side of the mirror-lock test (D3, check 6).
-// Since v5 the mirror also covers the update footer (V5B): 21 direct children,
-// and the status static is matched by elimination because its text depends on
-// the live silent check.
+// Since v5 the mirror also covers the idle auto-wake group (V5C) and the
+// update footer (V5B): 24 direct children, and the status static is matched
+// by elimination because its text depends on the live silent check.
 internal static class VerifySettings
 {
     private const int WM_CLOSE = 0x0010;
@@ -258,10 +258,13 @@ internal static class VerifySettings
                 int customWidth = Scaled(SettingsDialogMetrics.CustomButtonWidthPx, scale);
                 int customLift = Scaled(SettingsDialogMetrics.CustomButtonLiftPx, scale);
                 int previewHeight = (int)Math.Round(width * (double)primaryScreen.Height / primaryScreen.Width);
+                int comboWidth = Scaled(SettingsDialogMetrics.IdleComboWidthPx, scale);
                 int fixedChrome = edge + labelHeight + labelGap
                     + rowGap + swatchRow + groupGap
-                    + labelHeight + labelGap + textHeight + rowGap
-                    + hintHeight + groupGap + footerRow + groupGap + buttonRow + edge;
+                    + labelHeight + labelGap + textHeight
+                    + groupGap + labelHeight + labelGap + buttonRow + rowGap + hintHeight
+                    + groupGap + hintHeight + groupGap + footerRow + groupGap
+                    + buttonRow + edge;
                 int previewCap = current.WorkingArea.Height - nonClient - fixedChrome;
                 if (previewCap < Scaled(SettingsDialogMetrics.PreviewFloorPx, scale))
                     previewCap = Scaled(SettingsDialogMetrics.PreviewFloorPx, scale);
@@ -283,7 +286,15 @@ internal static class VerifySettings
                 expected.Add("text hint", new int[] { x + width - hintZone, y, hintZone, labelHeight });
                 y += labelHeight + labelGap;
                 expected.Add("text box", new int[] { x, y, width, textHeight });
-                y += textHeight + rowGap;
+                // Idle auto-wake group (V5C): label, combo on the button-row
+                // height tier, two-line caption hint, then the config-file hint.
+                y += textHeight + groupGap;
+                expected.Add("idle label", new int[] { x, y, width, labelHeight });
+                y += labelHeight + labelGap;
+                expected.Add("idle combo", new int[] { x, y, comboWidth, buttonRow });
+                y += buttonRow + rowGap;
+                expected.Add("idle hint", new int[] { x, y, width, hintHeight });
+                y += hintHeight + groupGap;
                 expected.Add("hint label", new int[] { x, y, width, hintHeight });
                 y += hintHeight + groupGap;
                 // Update footer (V5B): same formula as LayOutControls; the apply
@@ -507,6 +518,7 @@ internal static class VerifySettings
         string upper = child.Class.ToUpperInvariant();
         if (upper.IndexOf(".WINDOW.8.") >= 0) return "preview";
         if (IsEditClass(child.Class)) return "text box";
+        if (IsComboClass(child.Class)) return "idle combo";
         if (IsButtonClass(child.Class))
         {
             if (child.Text == "自定义颜色…") return "custom";
@@ -522,7 +534,9 @@ internal static class VerifySettings
         {
             if (child.Text.StartsWith("遮罩颜色")) return "color label";
             if (child.Text.StartsWith("遮罩文字")) return "text label";
+            if (child.Text.StartsWith("自动唤起")) return "idle label";
             if (child.Text.StartsWith("最多")) return "text hint";
+            if (child.Text.StartsWith("无操作")) return "idle hint";
             if (child.Text.StartsWith("配置文件")) return "hint label";
             if (child.Text.StartsWith("版本")) return "version label";
             // The one remaining static is the update status line; its text
@@ -691,8 +705,16 @@ internal static class VerifySettings
         Console.WriteLine("PASS: Enter on the dialog (focus outside the text box) saved the preset text via the confirmation path");
     }
 
-    // The single non-EDIT non-BUTTON child: the preview panel (WinForms
-    // superclasses Panel as "WindowsForms10.Window.8.app...").
+    // The idle tier combo (WinForms superclasses ComboBox as
+    // "WindowsForms10.COMBOBOX.app..."), matched like the EDIT both ways.
+    private static bool IsComboClass(string className)
+    {
+        string upper = className.ToUpperInvariant();
+        return upper == "COMBOBOX" || upper.IndexOf(".COMBOBOX.") >= 0;
+    }
+
+    // The single non-EDIT non-BUTTON child of the ".WINDOW.8." class: the
+    // preview panel (WinForms superclasses Panel as "WindowsForms10.Window.8.app...").
     private static IntPtr FindPreviewChild(IntPtr hwnd)
     {
         List<IntPtr> found = new List<IntPtr>();

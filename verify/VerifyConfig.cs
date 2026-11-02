@@ -148,13 +148,66 @@ internal static class VerifyConfig
             new MaskConfig(Color.FromArgb(9, 8, 7), "nested").Save(nestedConfig);
             CheckSame(MaskConfig.Load(nestedConfig), Color.FromArgb(9, 8, 7), "nested", "save-creates-dir");
 
-            passed = 18;
-            Console.WriteLine("PASS: 18 config tests (defaults/roundtrip/format/golden/corruption/escapes/atomic-write)");
+            // 19. Idle roundtrip: an on-tier value survives the real save/load pair.
+            dir = NewDir();
+            new MaskConfig(Color.FromArgb(0x33, 0x66, 0xCC), "T", 15).Save(ConfigOf(dir));
+            MaskConfig idleLoaded = MaskConfig.Load(ConfigOf(dir));
+            CheckSame(idleLoaded, Color.FromArgb(0x33, 0x66, 0xCC), "T", "idle-roundtrip");
+            Check(idleLoaded.IdleMinutes == 15,
+                "idle-roundtrip: idle mismatch, got " + idleLoaded.IdleMinutes);
+
+            // 20. Missing idle key (old two-line file) reads as 0 = off.
+            dir = NewDir();
+            WriteAscii(ConfigOf(dir), "color=#0A0B0C\r\ntext=Hi\r\n");
+            MaskConfig noIdle = MaskConfig.Load(ConfigOf(dir));
+            CheckSame(noIdle, Color.FromArgb(0x0A, 0x0B, 0x0C), "Hi", "idle-missing");
+            Check(noIdle.IdleMinutes == 0, "idle-missing: idle is not 0, got " + noIdle.IdleMinutes);
+
+            // 21. Invalid/negative/empty idle falls back per-key: the v1 keys stay
+            // valid (whole-file default must NOT fire for the new key).
+            string[] badIdle = new string[] { "idle=abc", "idle=-5", "idle=", "idle=3.5" };
+            foreach (string bad in badIdle)
+            {
+                dir = NewDir();
+                WriteAscii(ConfigOf(dir), "color=#0A0B0C\r\ntext=Keep\r\n" + bad + "\r\n");
+                MaskConfig perKey = MaskConfig.Load(ConfigOf(dir));
+                CheckSame(perKey, Color.FromArgb(0x0A, 0x0B, 0x0C), "Keep", "idle-invalid(" + bad + ")");
+                Check(perKey.IdleMinutes == 0,
+                    "idle-invalid(" + bad + "): idle is not 0, got " + perKey.IdleMinutes);
+            }
+
+            // 22. Off-tier positives clamp into the tier table (floor snap,
+            // 1..4 -> 5, 6..9 -> 5, 11..14 -> 10, 16..29 -> 15, 31+ -> 30).
+            int[] offTier = new int[] { 1, 3, 5, 7, 9, 10, 12, 15, 17, 29, 30, 45, int.MaxValue };
+            int[] clamped = new int[] { 5, 5, 5, 5, 5, 10, 10, 15, 15, 15, 30, 30, 30 };
+            for (int i = 0; i < offTier.Length; i++)
+            {
+                dir = NewDir();
+                WriteAscii(ConfigOf(dir), "color=#0A0B0C\r\nidle=" + offTier[i] + "\r\n");
+                MaskConfig snapped = MaskConfig.Load(ConfigOf(dir));
+                Check(snapped.IdleMinutes == clamped[i],
+                    "idle-clamp(" + offTier[i] + "): expected " + clamped[i]
+                        + ", got " + snapped.IdleMinutes);
+            }
+
+            // 23. Save format: the third line appears only while idle is on, so
+            // the off/default save stays byte-identical to the v1 two-line format.
+            dir = NewDir();
+            new MaskConfig(Color.FromArgb(0x33, 0x66, 0xCC), "T", 10).Save(ConfigOf(dir));
+            Check(File.ReadAllText(ConfigOf(dir)) == "color=#3366CC\r\ntext=T\r\nidle=10\r\n",
+                "idle-save-format: unexpected file content: " + File.ReadAllText(ConfigOf(dir)));
+            dir = NewDir();
+            new MaskConfig(Color.FromArgb(0x33, 0x66, 0xCC), "T").Save(ConfigOf(dir));
+            Check(File.ReadAllText(ConfigOf(dir)) == "color=#3366CC\r\ntext=T\r\n",
+                "idle-off-format: unexpected file content: " + File.ReadAllText(ConfigOf(dir)));
+
+            passed = 23;
+            Console.WriteLine("PASS: 23 config tests (defaults/roundtrip/format/golden/corruption/escapes/atomic-write/idle-key)");
             return 0;
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine("FAIL after " + passed + "/18 config tests: " + ex.Message);
+            Console.Error.WriteLine("FAIL after " + passed + "/23 config tests: " + ex.Message);
             return 1;
         }
         finally

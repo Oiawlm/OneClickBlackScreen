@@ -35,6 +35,9 @@ internal sealed class SettingsDialog : Form
     private readonly Label textLabel = new Label();
     private readonly Label textHintLabel = new Label();
     private readonly TextBox textBox = new TextBox();
+    private readonly Label idleLabel = new Label();
+    private readonly ComboBox idleCombo = new ComboBox();
+    private readonly Label idleHintLabel = new Label();
     private readonly Label hintLabel = new Label();
     private readonly Button resetButton = new Button();
     private readonly Button cancelButton = new Button();
@@ -109,9 +112,34 @@ internal sealed class SettingsDialog : Form
         textBox.Text = draft.MaskText;
         textBox.TextChanged += delegate
         {
-            draft = new MaskConfig(draft.MaskColor, MaskConfig.NormalizeNewlines(textBox.Text));
+            draft = new MaskConfig(draft.MaskColor, MaskConfig.NormalizeNewlines(textBox.Text),
+                draft.IdleMinutes);
             preview.UpdateConfig(draft);
         };
+        // Idle auto-wake section (V5C/C8): a closed-list dropdown whose items
+        // and selection index map 1:1 onto MaskConfig.IdleMinutesTiers, so the
+        // tier table stays single-sourced and hand-edited clamps snap visible.
+        // Owner-draw fixed: the native auto-height is font-driven and
+        // DPI-nonlinear (probe: 28@96 / 36@144), while ItemHeight plus a small
+        // chrome is fully controllable - see LayOutControls.
+        idleLabel.Text = "自动唤起";
+        idleLabel.AutoSize = false;
+        idleCombo.DropDownStyle = ComboBoxStyle.DropDownList;
+        idleCombo.DrawMode = DrawMode.OwnerDrawFixed;
+        idleCombo.DrawItem += delegate(object sender, DrawItemEventArgs e)
+        {
+            DrawIdleItem(e);
+        };
+        for (int i = 0; i < MaskConfig.IdleMinutesTiers.Length; i++)
+            idleCombo.Items.Add(IdleTierLabel(MaskConfig.IdleMinutesTiers[i]));
+        idleCombo.SelectedIndex = IdleTierIndex(draft.IdleMinutes);
+        idleCombo.SelectedIndexChanged += delegate
+        {
+            draft = new MaskConfig(draft.MaskColor, draft.MaskText,
+                MaskConfig.IdleMinutesTiers[idleCombo.SelectedIndex]);
+        };
+        idleHintLabel.Text = "无操作所选时长后，所有屏幕自动出现遮罩；按任意键退出并重新计时\n由 Windows 计划任务驱动，无后台常驻，不联网";
+        idleHintLabel.AutoSize = false;
         hintLabel.Text = "配置文件：" + MaskConfig.SettingsPath + "\n保存后，下一次启动遮罩时生效；退出交互与旧版完全一致。";
         hintLabel.AutoSize = false;
         resetButton.Text = "恢复默认";
@@ -136,16 +164,17 @@ internal sealed class SettingsDialog : Form
         applyUpdateButton.Click += delegate { BeginApplyUpdate(); };
         // Explicit tab order for the focusable controls, matching the visual
         // reading order; labels, the preview and the swatches stay out of the
-        // chain. The footer strip sits between the text section and the button
-        // row, so the update pair reads after the text box.
+        // chain. The idle combo reads after the text box (content column), the
+        // footer strip's update pair follows, then the button row.
         customColorButton.TabIndex = 0;
         textBox.TabIndex = 1;
-        checkUpdateButton.TabIndex = 2;
-        applyUpdateButton.TabIndex = 3;
-        resetButton.TabIndex = 4;
-        cancelButton.TabIndex = 5;
-        tryButton.TabIndex = 6;
-        saveButton.TabIndex = 7;
+        idleCombo.TabIndex = 2;
+        checkUpdateButton.TabIndex = 3;
+        applyUpdateButton.TabIndex = 4;
+        resetButton.TabIndex = 5;
+        cancelButton.TabIndex = 6;
+        tryButton.TabIndex = 7;
+        saveButton.TabIndex = 8;
 
         // Theme switching: any WM_SETTINGCHANGE restarts the debounce; after it
         // settles, reread the registry and only reapply on a real change (V3).
@@ -161,6 +190,7 @@ internal sealed class SettingsDialog : Form
         // handle recreation; the parent's OnHandleCreated runs before children
         // have handles (T7 #6).
         textBox.HandleCreated += delegate { ApplyTextBoxTheme(); };
+        idleCombo.HandleCreated += delegate { ApplyComboTheme(); };
         ApplyPalette();
 
         Controls.Add(colorLabel);
@@ -170,6 +200,9 @@ internal sealed class SettingsDialog : Form
         Controls.Add(textLabel);
         Controls.Add(textHintLabel);
         Controls.Add(textBox);
+        Controls.Add(idleLabel);
+        Controls.Add(idleCombo);
+        Controls.Add(idleHintLabel);
         Controls.Add(hintLabel);
         Controls.Add(versionLabel);
         Controls.Add(checkUpdateButton);
@@ -220,8 +253,10 @@ internal sealed class SettingsDialog : Form
         Font = bodyFont;
         colorLabel.Font = labelFont;
         textLabel.Font = labelFont;
+        idleLabel.Font = labelFont;
         hintLabel.Font = hintFont;
         textHintLabel.Font = hintFont;
+        idleHintLabel.Font = hintFont;
         // The update footer runs on the caption tier end to end; its two buttons
         // take the hint font so they stay compact beside the status line.
         versionLabel.Font = hintFont;
@@ -243,18 +278,22 @@ internal sealed class SettingsDialog : Form
         int footerRow = S(SettingsDialogMetrics.FooterRowHeightPx);
         int hintZone = S(SettingsDialogMetrics.HintZoneWidthPx);
         int width = S(SettingsDialogMetrics.ContentWidthPx);
+        int comboWidth = S(SettingsDialogMetrics.IdleComboWidthPx);
         // One screen source feeds both the preview cap and the re-center at the
         // end, so the cap is judged against the screen the dialog actually stays on.
         Screen current = Screen.FromControl(this);
         Rectangle primary = Screen.PrimaryScreen.Bounds;
         int previewHeight = (int)Math.Round(width * (double)primary.Height / primary.Width);
-        // Cap the preview so the text section and the button row stay inside the
-        // working area; the floor only gives way on working areas this app does
-        // not support (S2: compress to the floor and let containment fail honestly).
+        // Cap the preview so both content sections and the button row stay inside
+        // the working area; the floor only gives way on working areas this app
+        // does not support (S2: compress to the floor and let containment fail
+        // honestly). The idle section adds its own label/combo/hint stack.
         int fixedChrome = edge + labelHeight + labelGap
             + rowGap + swatchRow + groupGap
-            + labelHeight + labelGap + textHeight + rowGap
-            + hintHeight + groupGap + footerRow + groupGap + buttonRow + edge;
+            + labelHeight + labelGap + textHeight
+            + groupGap + labelHeight + labelGap + buttonRow + rowGap + hintHeight
+            + groupGap + hintHeight + groupGap + footerRow + groupGap
+            + buttonRow + edge;
         int previewCap = current.WorkingArea.Height - (Height - ClientSize.Height) - fixedChrome;
         if (previewCap < S(SettingsDialogMetrics.PreviewFloorPx))
             previewCap = S(SettingsDialogMetrics.PreviewFloorPx);
@@ -283,7 +322,21 @@ internal sealed class SettingsDialog : Form
         textHintLabel.SetBounds(x + width - hintZone, y, hintZone, labelHeight);
         y += labelHeight + labelGap;
         textBox.SetBounds(x, y, width, textHeight);
-        y += textHeight + rowGap;
+        // Idle auto-wake group: section label, closed-list combo on the Fluent
+        // control-height tier, then the two-line caption hint; the config-file
+        // hint follows as its own trailing block before the button row.
+        y += textHeight + groupGap;
+        idleLabel.SetBounds(x, y, width, labelHeight);
+        y += labelHeight + labelGap;
+        // The combo auto-sizes to ItemHeight + chrome at the live DPI; derive
+        // the chrome and fill the tier through ItemHeight so the row lands
+        // exactly on ButtonRowHeightPx (owner-draw keeps the height settable).
+        int comboChrome = idleCombo.Height - idleCombo.ItemHeight;
+        idleCombo.ItemHeight = buttonRow - comboChrome;
+        idleCombo.SetBounds(x, y, comboWidth, buttonRow);
+        y += buttonRow + rowGap;
+        idleHintLabel.SetBounds(x, y, width, hintHeight);
+        y += hintHeight + groupGap;
         hintLabel.SetBounds(x, y, width, hintHeight);
         y += hintHeight + groupGap;
         // Update footer (B7): version line, check button, one-line status, and a
@@ -351,6 +404,10 @@ internal sealed class SettingsDialog : Form
         textLabel.ForeColor = palette.Text;
         textHintLabel.BackColor = palette.Bg;
         textHintLabel.ForeColor = palette.TextSecondary;
+        idleLabel.BackColor = palette.Bg;
+        idleLabel.ForeColor = palette.Text;
+        idleHintLabel.BackColor = palette.Bg;
+        idleHintLabel.ForeColor = palette.TextSecondary;
         hintLabel.BackColor = palette.Bg;
         hintLabel.ForeColor = palette.TextSecondary;
         versionLabel.BackColor = palette.Bg;
@@ -376,6 +433,7 @@ internal sealed class SettingsDialog : Form
         }
         UpdateSwatchSelection();
         ApplyTextBoxTheme();
+        ApplyComboTheme();
         if (IsHandleCreated)
         {
             ApplyFrameTheme();
@@ -439,6 +497,43 @@ internal sealed class SettingsDialog : Form
         }
     }
 
+    // Palette-driven items for the closed-list combo: the native dropdown list
+    // never follows the dark app theme, while owner-drawn items use the same
+    // palette tokens as everything else; focus cues still come from the system.
+    private void DrawIdleItem(DrawItemEventArgs e)
+    {
+        bool selected = (e.State & DrawItemState.Selected) != 0;
+        using (SolidBrush back = new SolidBrush(selected ? palette.ButtonHover : idleCombo.BackColor))
+        using (SolidBrush fore = new SolidBrush(idleCombo.ForeColor))
+        {
+            e.Graphics.FillRectangle(back, e.Bounds);
+            string item = e.Index >= 0 && e.Index < idleCombo.Items.Count
+                ? (string)idleCombo.Items[e.Index] : "";
+            float textTop = e.Bounds.Y + (e.Bounds.Height - e.Font.Height) / 2f;
+            e.Graphics.DrawString(item, e.Font, fore, e.Bounds.X + S(7), textTop);
+        }
+        if ((e.State & DrawItemState.Focus) != 0)
+            e.DrawFocusRectangle();
+    }
+
+    // Same native theming as the text box, for the one combo in the window.
+    private void ApplyComboTheme()
+    {
+        if (IsDisposed || !idleCombo.IsHandleCreated) return;
+        if (lightTheme)
+        {
+            SetWindowTheme(idleCombo.Handle, null, null);
+            idleCombo.BackColor = SystemColors.Window;
+            idleCombo.ForeColor = SystemColors.WindowText;
+        }
+        else
+        {
+            SetWindowTheme(idleCombo.Handle, "DarkMode_Explorer", null);
+            idleCombo.BackColor = palette.Surface;
+            idleCombo.ForeColor = palette.Text;
+        }
+    }
+
     private void ApplyFrameTheme()
     {
         if (!IsHandleCreated) return;
@@ -489,7 +584,7 @@ internal sealed class SettingsDialog : Form
 
     private void ApplyColor(Color color)
     {
-        draft = new MaskConfig(color, draft.MaskText);
+        draft = new MaskConfig(color, draft.MaskText, draft.IdleMinutes);
         preview.UpdateConfig(draft);
         UpdateSwatchSelection();
     }
@@ -508,8 +603,22 @@ internal sealed class SettingsDialog : Form
     {
         draft = new MaskConfig();
         textBox.Text = "";
+        idleCombo.SelectedIndex = 0;
         preview.UpdateConfig(draft);
         UpdateSwatchSelection();
+    }
+
+    // Display strings for the tier table (index 0 reads as "off").
+    private static string IdleTierLabel(int minutes)
+    {
+        return minutes <= 0 ? "关闭" : minutes + " 分钟";
+    }
+
+    private static int IdleTierIndex(int minutes)
+    {
+        for (int i = 0; i < MaskConfig.IdleMinutesTiers.Length; i++)
+            if (MaskConfig.IdleMinutesTiers[i] == minutes) return i;
+        return 0;
     }
 
     private void SaveAndClose(bool tryMask)
@@ -521,7 +630,7 @@ internal sealed class SettingsDialog : Form
                 "一键黑屏 · 设置", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
-        MaskConfig saving = new MaskConfig(draft.MaskColor, text);
+        MaskConfig saving = new MaskConfig(draft.MaskColor, text, draft.IdleMinutes);
         try
         {
             saving.Save();
@@ -532,6 +641,10 @@ internal sealed class SettingsDialog : Form
                 "一键黑屏 · 设置", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
+        // C6: the scheduled task tracks the saved config before any preview
+        // launch; a schtasks failure warns but never rolls the config back -
+        // the next save heals the task state.
+        SyncIdleTask(saving.IdleMinutes);
         if (tryMask)
         {
             try
@@ -657,6 +770,23 @@ internal sealed class SettingsDialog : Form
                 Close();
             });
         });
+    }
+
+    // Keeps the per-minute scheduled task in step with the saved idle setting
+    // (C6): on -> idempotent re-register, off -> delete if present.
+    private static void SyncIdleTask(int idleMinutes)
+    {
+        try
+        {
+            if (idleMinutes > 0) IdleWake.Ensure(Application.ExecutablePath);
+            else IdleWake.Remove();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show("计划任务同步失败：" + ex.Message
+                + "\n设置已保存，下次保存时会自动重试。",
+                "一键黑屏 · 设置", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
     }
 
     // Renders the working copy through the shared painter at the primary screen

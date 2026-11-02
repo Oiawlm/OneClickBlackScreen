@@ -1,29 +1,45 @@
 ﻿using System;
 using System.Drawing;
+using System.Globalization;
 using System.IO;
 using System.Text;
 
 // Immutable mask customization settings: the overlay color and the overlay text.
 // Persisted as two "key=value" lines; any known key with an invalid value makes the
 // whole file fall back to the defaults (pure black, no text = v1 behavior).
+// Idle auto-wake contract extension (V5C/C5): the third key idle is per-key -
+// missing/invalid/negative falls back to 0 (off) and never affects the v1 keys,
+// which keep their whole-file fallback above. Off-tier positive integers clamp
+// into IdleMinutesTiers (registered in ClampIdleMinutes). Save appends the third
+// line only while idle is on, so an off/default save stays byte-identical to the
+// v1 two-line format.
 internal sealed class MaskConfig
 {
     public const int MaxTextLength = 200;
     private const long MaxFileBytes = 65536;
 
+    // Idle tier table (C1/C5), single declaration point: 0 = off, then the
+    // selectable minute rungs. The settings combo and VerifyIdle read this array.
+    public static readonly int[] IdleMinutesTiers = new int[] { 0, 5, 10, 15, 30 };
+
     public Color MaskColor { get; private set; }
     public string MaskText { get; private set; }
+    public int IdleMinutes { get; private set; }
 
     public MaskConfig()
     {
         MaskColor = Color.Black;
         MaskText = "";
+        IdleMinutes = 0;
     }
 
-    public MaskConfig(Color color, string text)
+    public MaskConfig(Color color, string text) : this(color, text, 0) { }
+
+    public MaskConfig(Color color, string text, int idleMinutes)
     {
         MaskColor = Color.FromArgb(255, color.R, color.G, color.B);
         MaskText = text ?? "";
+        IdleMinutes = ClampIdleMinutes(idleMinutes);
     }
 
     public static string SettingsPath
@@ -71,6 +87,7 @@ internal sealed class MaskConfig
     {
         Color color = Color.Black;
         string text = "";
+        int idle = 0;
         string[] lines = content.Split('\n');
         for (int i = 0; i < lines.Length; i++)
         {
@@ -92,8 +109,35 @@ internal sealed class MaskConfig
                 if (candidate.Length > MaxTextLength) return new MaskConfig();
                 text = candidate;
             }
+            else if (key == "idle") // stored as "idle=N" (save below)
+            {
+                // Per-key fallback: an unreadable value leaves idle off and the
+                // v1 keys above untouched; a readable one clamps in the ctor.
+                int minutes;
+                if (int.TryParse(value.Trim(), NumberStyles.Integer,
+                    CultureInfo.InvariantCulture, out minutes) && minutes > 0)
+                    idle = minutes;
+            }
         }
-        return new MaskConfig(color, text);
+        return new MaskConfig(color, text, idle);
+    }
+
+    // Off-tier positives clamp into the tier table: 1..4 round up to 5, values
+    // above 30 clamp down to 30, in-between ones snap down to the largest tier
+    // not exceeding the value - the mask never waits longer than hand-written.
+    private static int ClampIdleMinutes(int value)
+    {
+        if (value <= 0) return 0;
+        int result = IdleMinutesTiers[1];
+        for (int i = IdleMinutesTiers.Length - 1; i >= 1; i--)
+        {
+            if (IdleMinutesTiers[i] <= value)
+            {
+                result = IdleMinutesTiers[i];
+                break;
+            }
+        }
+        return result;
     }
 
     private static bool TryParseColor(string value, out Color color)
@@ -172,7 +216,8 @@ internal sealed class MaskConfig
         string directory = Path.GetDirectoryName(Path.GetFullPath(path));
         Directory.CreateDirectory(directory);
         string body = "color=#" + MaskColor.R.ToString("X2") + MaskColor.G.ToString("X2") + MaskColor.B.ToString("X2")
-            + "\r\ntext=" + Escape(NormalizeNewlines(MaskText)) + "\r\n";
+            + "\r\ntext=" + Escape(NormalizeNewlines(MaskText)) + "\r\n"
+            + (IdleMinutes > 0 ? "idle=" + IdleMinutes + "\r\n" : "");
         string temp = Path.Combine(directory, Path.GetRandomFileName());
         try
         {
