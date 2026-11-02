@@ -136,4 +136,4 @@ verify 5 件→**7 件**：`[6] VerifyUpdate`（B）＋`[7] VerifyIdle`（C）�
 
 ## 8. 勘误
 
-（空——执行窗口发现本文事实错误，先在此登记再按勘误后口径实现，不静默偏离。）
+**E1（I 波登记，2026-11-03）**：I3/A7 中 zip 资产名 `一键黑屏-v1.0.0.zip` **平台不可达**——GitHub Releases 资产 name 字段对非 ASCII 字符做服务端消毒（中文字符被剥除，实测 PATCH `name` 与 uploads 端点同样被剥，同请求的 `label` 字段中文完好存活；社区登记 [community #57748](https://github.com/orgs/community/discussions/57748)、[#209923](https://github.com/orgs/community/discussions/209923)）。**勘误后口径**：zip 资产名＝`OneClickBlackScreen-v1.0.0.zip`（ASCII），中文身份保留在资产 `label`（「一键黑屏 v1.0.0 完整包（exe＋config＋ico＋使用说明）」，Release 页与 `label` 一同显示）；SHA256SUMS 行名与 README 引用同步改用 ASCII 名。zip **内部**文件名不受影响（一键黑屏.exe 等照旧）。铁律 3「资产名必须等于 AppInfo.UpdateAssetName」不受影响（该条针对更新器直链的裸 exe，本就是 ASCII）。
