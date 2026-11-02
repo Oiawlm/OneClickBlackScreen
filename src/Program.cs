@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -9,6 +10,9 @@ internal static class Program
     {
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
+        // Leftover backup from a previous self-update (B6): remove it best-effort
+        // in every mode; a locked file simply waits for the next start.
+        try { File.Delete(Application.ExecutablePath + ".old"); } catch { }
         if (args.Length == 0) return RunOverlay();
         if (args.Length == 1 && args[0] == "--settings") return RunSettings();
         MessageBox.Show("用法：双击或无参数启动遮罩；附加参数 --settings 打开设置窗口。",

@@ -36,5 +36,16 @@ internal static class SettingsDialogMetrics
     public const int TryButtonWidthPx = 116;    // text 79 + chrome 8 (flat preferred 91)
     public const int SaveButtonWidthPx = 80;    // text 37 + chrome 8 (flat minimum 75)
     // Button-row budget: 104+80+116+80 + 3x8 = 404 <= ContentWidthPx (S1 checks out with 4px spare).
+
+    // Update footer (V5B): one caption-tier strip between the hint and the
+    // button row; both footer buttons take the caption font so they stay
+    // compact next to the status line.
+    public const int FooterRowHeightPx = 24;    // same box as LabelRowHeightPx: caption line 16 + button chrome margin
+    public const int FooterVersionZonePx = 80;  // "版本 1.0.0" caption = 2 CJK 24 + " 1.0.0" ~37 = ~61 + margin
+    public const int FooterButtonWidthPx = 80;  // 4-CJK caption text ~48 + chrome (75 flat minimum) -> the 80 tier, like cancel
+    // Footer budget: 80 + 8 + 80 + 8 + status + 8 + 80 = 408 -> status line = 144
+    // (one caption line, ellipsized overflow); the apply button's slot is fixed
+    // so revealing it never shifts any other control (constant geometry).
+
     public const int PreviewFloorPx = 60;     // preview cap floor (v1 on)
 }
