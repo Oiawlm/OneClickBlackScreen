@@ -25,10 +25,10 @@
 
 | 文件 | 大小 | SHA256 |
 |---|---|---|
-| 一键黑屏.bundle（`git bundle create --all`，基线＝Commit A `<回填>`；Commit B 仅回填本表 digest 的文档增量，无代码/手册变更） | `<回填>` | `<回填>` |
-| skills-三件套.zip（fts-style-system/glm-prompt-crafter/github-readme；wb-bridge 未入包＝可选件含机器相关 node_modules） | `<回填>` | `<回填>` |
-| settings-可选备份.ini（`%LOCALAPPDATA%\BlackScreen\settings.ini` 副本，个性化可选件） | `<回填>` | `<回填>` |
-| SHA256SUMS.txt（上三件，`哈希␣␣文件名`） | — | 以文件为准 |
+| 一键黑屏.bundle（`git bundle create --all`，基线＝Commit A `9988e64`；`git bundle verify`＝okay/11 refs/complete history：6 feature 分支＋main＋origin/main＋tag v1.0.0。Commit B 仅回填本表 digest＋手册 4B.3 措辞精确化＋清 mm 中间产物，无代码变更） | 729,597 B | `FD524F6F7696E95E3A6E964A61E84CC46A66F451067B52ABAFFD848CAE661BF0` |
+| skills-三件套.zip（fts-style-system/glm-prompt-crafter/github-readme；wb-bridge 未入包＝可选件含机器相关 node_modules） | 475,214 B | `8A8D47C0E4C27B4470CF7B8B316D2F87D7A15CEB2BC8D7C356AEF2B4D323D97D` |
+| settings-可选备份.ini（`%LOCALAPPDATA%\BlackScreen\settings.ini` 副本，个性化可选件） | 80 B | `ED6C6B2242FE82007D9750A1329DE06E867597AB21925CE8CAE21A5DD0AB56FF` |
+| SHA256SUMS.txt（上三件，`哈希␣␣文件名`，UTF-8 无 BOM——记事本 Win10 1903+ 自动识别） | 268 B | 以文件为准 |
 
 凭证不入包核查：四技能目录 `ghp_|sk-|api_key|token|PRIVATE KEY` 模式扫描＝零命中；bundle 仅含仓库 git 对象（仓库自身无 `.wbx/`——.gitignore 历来排除）；zip 来源三技能目录（扫描同上）；ini 为界面偏好键值。`.gitignore` 新增 `migrate/*.zip|*.bundle|*.ini`（大文件不入库、路径登记于本表）。
 
@@ -53,15 +53,15 @@
 | A5 | `git clone https://github.com/Oiawlm/OneClickBlackScreen`（4A.1） | ✅本机 | 临时目录全新克隆成功，tip `c827b44`＝origin |
 | A6 | `git config core.quotepath false`＋`--get`（4A.2） | ✅本机 | 回显 `false` |
 | A14 | `git status` / `git log --oneline -1`（4A.3/8） | ✅本机 | status 干净；log 显示 c827b44 |
-| C2 | `certutil -hashfile 一键黑屏.bundle SHA256`（4B.1） | ✅本机（包生成后） | `<回填>` |
-| C1 | `git clone migrate\一键黑屏.bundle OneClickBlackScreen`（4B.2） | ✅本机（包生成后） | `<回填>` |
-| C3 | `git branch -a`（4B.3） | ✅本机（包生成后） | `<回填>` |
-| C4 | `git remote set-url origin …`（4B 注） | ✅本机（包生成后） | `<回填>` |
+| C2 | `certutil -hashfile 一键黑屏.bundle SHA256`（4B.1） | ✅本机（包生成后） | `fd524f6f…e661bf0`（小写）＝SUMS 行 1 逐字一致；zip `8a8d47c0…323d97d` 同＝行 2（两条抽验均 MATCH） |
+| C1 | `git clone …一键黑屏.bundle bundle-restore`（4B.2） | ✅本机 | `Cloning into …done`，tip＝`9988e64`（＝Commit A） |
+| C3 | `git branch -a`（4B.3） | ✅本机 | `* main`＋`remotes/origin/feature/*`×6（共 7 分支名）；还原仓 `git fsck` exit 0 |
+| C4 | `git remote set-url origin https://github.com/Oiawlm/OneClickBlackScreen`（4B 注） | ✅本机 | `get-url` 回显新址；`git fetch --dry-run` exit 0（离线仓转正在线仓连通） |
 | A7 | `build.cmd`（5.1） | ✅本机（临时 clone） | `[OK] Build succeeded: …dist\一键黑屏.exe`，exit 0 |
 | A8 | `verify.cmd`（5.2） | ✅本机（临时 clone） | 七件全绿 `[OK] ALL VERIFIERS PASSED`，exit 0（全新 clone→构建→验证链路成立） |
 | A9/A10 | `powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1`（5.3） | ✅本机 | 见 §1 移植性行 |
 | — | 双击 exe 冒烟（5.4） | ⚠️PC2 手动 | 图形步骤；按任意键退出（README:80 口径） |
-| A16 | `Expand-Archive skills-三件套.zip`＋`dir`（6.2） | ✅本机（包生成后） | `<回填>` |
+| A16 | `Expand-Archive skills-三件套.zip -DestinationPath …\.zcode\skills`（6.2） | ✅本机 | 解压成功，`fts-style-system`/`github-readme`/`glm-prompt-crafter` 三目录在列 |
 | A2b | `winget install --id GitHub.cli`（7） | ⚠️半代验 | `winget show` 证 ID 可达（`2.103.3`）；安装＝PC2 特有 |
 | A15 | `gh --version`（7） | ✅本机 | `gh version 2.101.0`；`gh auth login` 交互＝PC2 手动 |
 | A13 | `git fsck`（8） | ✅本机 | exit 0，仅 `dangling tree`（手册已注明属正常） |
@@ -74,8 +74,8 @@
 | # | 要求 | 证据 |
 |---|---|---|
 | 1 | install.ps1 无硬编码＋幂等两遍 | §1 表（grep exit 1＋两遍 `[OK]`） |
-| 2 | migrate/ 手册 md/html、bundle、skills zip 齐且含总图/步骤卡/排错表 | §2＋§3；`git bundle verify` 见 `<回填>` |
-| 3 | SHA256SUMS.txt＋certutil 抽验两条 | `<回填>` |
+| 2 | migrate/ 手册 md/html、bundle、skills zip 齐且含总图/步骤卡/排错表 | §2＋§3；`git bundle verify`＝okay/11 refs/complete history（§2 表内注） |
+| 3 | SHA256SUMS.txt＋certutil 抽验两条 | §4 C2 行：bundle＋zip 两条小写 digest 与 SUMS 逐字 MATCH |
 | 4 | 手册含「在哪打开 PowerShell」图文＋每命令预期输出；≥15 块逐一冒烟 | §3 手册结构＋§4 表（22 块） |
 | 5 | cleanup 无开关拒绝＋打印 D6；dry-run 落档 | §3 B1/B2 |
 | 6 | 手册含五项勾选清单＋「验证前不删」警示 | 手册阶段 8 表＋首页红线框＋阶段 9 红线 |
