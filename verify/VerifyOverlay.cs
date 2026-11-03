@@ -354,27 +354,32 @@ internal static class VerifyOverlay
                 }
 
                 // E. Frozen arming semantics: held key blocks arm; unarmed key is ignored;
-                //    after release the same key exits.
+                //    after release the same key exits. The outer finally pairs the Shift
+                //    down even when Launch() throws (V6B hygiene audit handoff).
                 keybd_event(0x10, 0, 0, UIntPtr.Zero); // Shift down before launch
-                using (Process process = Launch())
+                try
                 {
-                    try
+                    using (Process process = Launch())
                     {
-                        keybd_event(0x1B, 0, 0, UIntPtr.Zero);
-                        keybd_event(0x1B, 0, 2, UIntPtr.Zero);
-                        Thread.Sleep(800);
-                        Check(!process.HasExited, "Overlay exited before arming");
-                        keybd_event(0x10, 0, 2, UIntPtr.Zero); // release Shift -> next tick arms
-                        Thread.Sleep(400);
-                        ExitByKey(process, 0x1B);
-                        Console.WriteLine("PASS E: held key blocked arming, unarmed key ignored, exit after release");
-                    }
-                    finally
-                    {
-                        keybd_event(0x10, 0, 2, UIntPtr.Zero);
-                        KillIfNeeded(process);
+                        try
+                        {
+                            keybd_event(0x1B, 0, 0, UIntPtr.Zero);
+                            keybd_event(0x1B, 0, 2, UIntPtr.Zero);
+                            Thread.Sleep(800);
+                            Check(!process.HasExited, "Overlay exited before arming");
+                            keybd_event(0x10, 0, 2, UIntPtr.Zero); // release Shift -> next tick arms
+                            Thread.Sleep(400);
+                            ExitByKey(process, 0x1B);
+                            Console.WriteLine("PASS E: held key blocked arming, unarmed key ignored, exit after release");
+                        }
+                        finally
+                        {
+                            keybd_event(0x10, 0, 2, UIntPtr.Zero);
+                            KillIfNeeded(process);
+                        }
                     }
                 }
+                finally { keybd_event(0x10, 0, 2, UIntPtr.Zero); }
 
                 // F. Second instance self-exits while the first stays alive.
                 using (Process first = Launch())
