@@ -1,7 +1,9 @@
 ﻿# 一键黑屏 v2 安装脚本：幂等同步 DeskBox 双快捷方式，指向仓库 dist 产物。
+# 快捷方式目标目录 = 当前用户的 DeskBox（$env:USERPROFILE\DeskBox\DeskBox，随登录用户名自动适配，
+# 换电脑/换用户名无需改脚本；要装到别处可改下方 $deskBox 一行）。
 # 只创建/更新以下两个 .lnk，不触碰目录内其他文件：
-#   C:\Users\Lenovo\DeskBox\DeskBox\一键黑屏.lnk      （无参数 = 立即遮罩）
-#   C:\Users\Lenovo\DeskBox\DeskBox\一键黑屏-设置.lnk  （--settings = 设置窗口）
+#   一键黑屏.lnk      （无参数 = 立即遮罩）
+#   一键黑屏-设置.lnk  （--settings = 设置窗口）
 $ErrorActionPreference = 'Stop'
 
 $repo = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -12,7 +14,8 @@ if (-not (Test-Path $exe)) {
     exit 1
 }
 
-$deskBox = 'C:\Users\Lenovo\DeskBox\DeskBox'
+# 快捷方式目标目录：默认当前用户 DeskBox（可在上面一行按需改成其他目录）。
+$deskBox = Join-Path $env:USERPROFILE 'DeskBox\DeskBox'
 if (-not (Test-Path $deskBox)) { New-Item -ItemType Directory -Path $deskBox | Out-Null }
 
 $shell = New-Object -ComObject WScript.Shell

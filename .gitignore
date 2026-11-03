@@ -5,3 +5,7 @@ dist/
 .vs/
 *.pdb
 verify/bin/
+# V5D 迁移包：大文件不入库，路径登记见 docs/MIGRATE-V5D.md
+migrate/*.zip
+migrate/*.bundle
+migrate/*.ini
