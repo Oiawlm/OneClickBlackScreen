@@ -25,7 +25,7 @@
 
 | 文件 | 大小 | SHA256 |
 |---|---|---|
-| 一键黑屏.bundle（`git bundle create --all`，基线＝Commit A `9988e64`；`git bundle verify`＝okay/11 refs/complete history：6 feature 分支＋main＋origin/main＋tag v1.0.0。Commit B 仅回填本表 digest＋手册 4B.3 措辞精确化＋清 mm 中间产物，无代码变更） | 729,597 B | `FD524F6F7696E95E3A6E964A61E84CC46A66F451067B52ABAFFD848CAE661BF0` |
+| 一键黑屏.bundle（`git bundle create --all`，基线＝Commit A `9988e64`；`git bundle verify`＝okay/11 refs/complete history：6 feature 分支＋main＋origin/main＋tag v1.0.0。Commit B/C 仅回填 digest＋手册措辞精确化＋清中间产物＋dry-run 存档，无代码/脚本行为变更） | 729,597 B | `FD524F6F7696E95E3A6E964A61E84CC46A66F451067B52ABAFFD848CAE661BF0` |
 | skills-三件套.zip（fts-style-system/glm-prompt-crafter/github-readme；wb-bridge 未入包＝可选件含机器相关 node_modules） | 475,214 B | `8A8D47C0E4C27B4470CF7B8B316D2F87D7A15CEB2BC8D7C356AEF2B4D323D97D` |
 | settings-可选备份.ini（`%LOCALAPPDATA%\BlackScreen\settings.ini` 副本，个性化可选件） | 80 B | `ED6C6B2242FE82007D9750A1329DE06E867597AB21925CE8CAE21A5DD0AB56FF` |
 | SHA256SUMS.txt（上三件，`哈希␣␣文件名`，UTF-8 无 BOM——记事本 Win10 1903+ 自动识别） | 268 B | 以文件为准 |
@@ -85,3 +85,30 @@
 ## 6. 状态
 
 **轨道 D 完成**——迁移包就位、手册冒烟完毕、清理脚本只生成未执行（红线遵守：本窗口未做任何真实删除）。下一步＝用户：拷 `migrate/` → PC2 照手册阶段 1–7 → 阶段 8 五项全勾 → 旧机阶段 9 亲手跑 cleanup-local.ps1。
+
+## 7. DryRun 逐字输出存档（B2 全文，exit 0）
+
+```text
+模式：DryRun 演练（不改动任何文件）
+仓库：D:\Download\Agent Vault\一键黑屏
+桌面：C:\Users\Lenovo\Desktop
+
+S1   [DRY]  将把整个仓库压缩到桌面：C:\Users\Lenovo\Desktop\一键黑屏-最终留档-20261103-082630.zip 并打印其 SHA256
+S2   [DRY]  将删除 C:\Users\Lenovo\DeskBox\DeskBox\一键黑屏.lnk
+S2   [DRY]  将删除 C:\Users\Lenovo\DeskBox\DeskBox\一键黑屏-设置.lnk
+S3   [DRY]  将删除配置目录 C:\Users\Lenovo\AppData\Local\BlackScreen
+S4   [DRY]  将执行 schtasks /delete /tn OneClickBlackScreen-Idle /f（本就不存在则跳过）
+S5   [DRY]  将删除整个仓库目录 D:\Download\Agent Vault\一键黑屏
+S6   [LIST] ZCode 本工作区可定位痕迹（请到 ZCode 界面内手动移除，本脚本不盲删）：
+S6   [LIST]   存在：D:\Download\ZCodeData\.zcode\v2\tasks-index.sqlite
+S6   [LIST]   存在：D:\Download\ZCodeData\.zcode\v2\visualizations
+S6   [LIST]   存在：D:\Download\ZCodeData\.zcode\v2\checkpoints
+S6   [LIST]   提示：tasks-index.sqlite 是所有工作区共用的任务索引（删库会影响其他工作区，
+S6   [LIST]         建议只在 ZCode 应用的会话/任务列表里删除本项目相关条目，不动文件本身。
+S7   [KEEP] C:\Users\Lenovo\.zcode\skills 已保留：这是用户级技能库、非本项目专属，
+S7   [KEEP]         其他项目仍在用；最终去留由你自行决定（删除不影响一键黑屏）。
+
+[DONE] DryRun 演练结束：未改动任何文件。
+```
+
+（同批前后快照：DeskBox 两 .lnk / settings.ini / 仓库目录 / 桌面留档 zip 均不变；拒绝路径 B1 输出见 §3，exit 1。）
