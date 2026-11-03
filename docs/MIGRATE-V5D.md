@@ -25,7 +25,7 @@
 
 | 文件 | 大小 | SHA256 |
 |---|---|---|
-| 一键黑屏.bundle（`git bundle create --all`，基线＝Commit A `9988e64`；`git bundle verify`＝okay/11 refs/complete history：6 feature 分支＋main＋origin/main＋tag v1.0.0。Commit B/C 仅回填 digest＋手册措辞精确化＋清中间产物＋dry-run 存档，无代码/脚本行为变更） | 729,597 B | `FD524F6F7696E95E3A6E964A61E84CC46A66F451067B52ABAFFD848CAE661BF0` |
+| 一键黑屏.bundle（`git bundle create --all`，基线＝Commit A `9988e64`；`git bundle verify`＝okay/11 refs/complete history：6 feature 分支＋main＋origin/main＋tag v1.0.0。Commit B 起均为文档级增量（digest 回填/手册措辞精确化/清中间产物/dry-run 存档），无代码/脚本行为变更；origin/main 以最终提交为终点） | 729,597 B | `FD524F6F7696E95E3A6E964A61E84CC46A66F451067B52ABAFFD848CAE661BF0` |
 | skills-三件套.zip（fts-style-system/glm-prompt-crafter/github-readme；wb-bridge 未入包＝可选件含机器相关 node_modules） | 475,214 B | `8A8D47C0E4C27B4470CF7B8B316D2F87D7A15CEB2BC8D7C356AEF2B4D323D97D` |
 | settings-可选备份.ini（`%LOCALAPPDATA%\BlackScreen\settings.ini` 副本，个性化可选件） | 80 B | `ED6C6B2242FE82007D9750A1329DE06E867597AB21925CE8CAE21A5DD0AB56FF` |
 | SHA256SUMS.txt（上三件，`哈希␣␣文件名`，UTF-8 无 BOM——记事本 Win10 1903+ 自动识别） | 268 B | 以文件为准 |
