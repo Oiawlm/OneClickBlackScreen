@@ -62,15 +62,16 @@ internal static class VerifyUpdate
     private static void CheckVersionTable()
     {
         int[] current = AppInfo.CurrentVersion();
-        Check(current[0] == 1 && current[1] == 0 && current[2] == 0,
-            "AppInfo.CurrentVersion does not read the declared 1.0.0");
-        Check(AppInfo.IsNewer("v1.0.1", current), "v1.0.1 must read newer");
+        Check(current[0] == 1 && current[1] == 0 && current[2] == 1,
+            "AppInfo.CurrentVersion does not read the declared 1.0.1");
+        Check(AppInfo.IsNewer("v1.0.2", current), "v1.0.2 must read newer");
         Check(AppInfo.IsNewer("v1.1.0", current), "v1.1.0 must read newer");
         Check(AppInfo.IsNewer("v2.0.0", current), "v2.0.0 must read newer");
         Check(AppInfo.IsNewer("v10.0.0", current), "v10.0.0 must read newer (numeric order, not string order)");
         Check(!AppInfo.IsNewer("v0.9.9", current), "v0.9.9 must read older");
-        Check(!AppInfo.IsNewer("v1.0.0", current), "v1.0.0 must read equal, not newer");
-        Check(!AppInfo.IsNewer("1.0.0", current), "bare 1.0.0 must read equal, not newer");
+        Check(!AppInfo.IsNewer("v1.0.0", current), "v1.0.0 must read older, not newer");
+        Check(!AppInfo.IsNewer("v1.0.1", current), "v1.0.1 must read equal, not newer");
+        Check(!AppInfo.IsNewer("1.0.1", current), "bare 1.0.1 must read equal, not newer");
         Check(!AppInfo.IsNewer("v1.0", current), "two segments must fail closed");
         Check(!AppInfo.IsNewer("v1.0.0.1", current), "four segments must fail closed");
         Check(!AppInfo.IsNewer("v1.0.0-beta", current), "prerelease suffix must fail closed");
@@ -207,10 +208,10 @@ internal static class VerifyUpdate
                 Console.WriteLine("PASS: 404 / malformed JSON / missing asset fail closed");
 
                 // -- not newer / malformed tags read as no update (B2).
-                server.LatestJson = BuildLatestJson("v1.0.0", "sha256:" + payloadSha,
+                server.LatestJson = BuildLatestJson("v1.0.1", "sha256:" + payloadSha,
                     payload.Length, server.Base + "/asset", null);
                 Check(Updater.Check(server.Base) == null, "an equal tag must read as no update");
-                server.LatestJson = BuildLatestJson("v1.0.0-rc1", "sha256:" + payloadSha,
+                server.LatestJson = BuildLatestJson("v1.0.1-rc1", "sha256:" + payloadSha,
                     payload.Length, server.Base + "/asset", null);
                 Check(Updater.Check(server.Base) == null, "a malformed tag must read as no update");
                 Console.WriteLine("PASS: equal and malformed tags read as no update");

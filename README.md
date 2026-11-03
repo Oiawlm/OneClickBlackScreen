@@ -37,13 +37,13 @@
 
 ## 📦 下载与安装
 
-1. 打开 [Releases 页](https://github.com/Oiawlm/OneClickBlackScreen/releases)，下载最新版（当前 [v1.0.0](https://github.com/Oiawlm/OneClickBlackScreen/releases/tag/v1.0.0)）：
-   - `OneClickBlackScreen-v1.0.0.zip`（推荐，Release 页显示名「一键黑屏 v1.0.0 完整包」）：含主程序 exe、同名 `.exe.config`、`icon-settings.ico` 与使用说明，解压即用；
+1. 打开 [Releases 页](https://github.com/Oiawlm/OneClickBlackScreen/releases)，下载最新版（当前 [v1.0.1](https://github.com/Oiawlm/OneClickBlackScreen/releases/tag/v1.0.1)）：
+   - `OneClickBlackScreen-v1.0.1.zip`（推荐，Release 页显示名「一键黑屏 v1.0.1 完整包」）：含主程序 exe、同名 `.exe.config`、`icon-settings.ico` 与使用说明，解压即用；
    - `OneClickBlackScreen.exe`：裸单文件，适合最小化使用，也可被程序内更新器直连下载。
 2. （推荐）校验文件完整性——在 PowerShell 或 cmd 中运行：
 
    ```
-   certutil -hashfile OneClickBlackScreen-v1.0.0.zip SHA256
+   certutil -hashfile OneClickBlackScreen-v1.0.1.zip SHA256
    ```
 
    将输出的哈希与 Releases 页 `SHA256SUMS` 文件中对应行逐字比对，一致即通过。
