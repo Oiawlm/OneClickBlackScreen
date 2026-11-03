@@ -11,7 +11,8 @@ using System.Windows.Forms;
 // with custom color/text. Covers: one window per screen with exact bounds, topmost,
 // borderless, sampled pixels equal to the configured color, text pixels present with
 // text and absent without, 3-key foreground+background keyboard exit with exit code 0,
-// the frozen arming semantics, second-instance self-exit, and InputIdle <= 2000ms.
+// the frozen arming semantics, second-instance self-exit, InputIdle <= 2000ms, the
+// launch-key self-latch (G) and the phantom-key arming regression (H) from V6A.
 internal static class VerifyOverlay
 {
     private delegate bool EnumProc(IntPtr hwnd, IntPtr data);
@@ -396,8 +397,61 @@ internal static class VerifyOverlay
                     finally { KillIfNeeded(first); }
                 }
 
+                // G. Launch-key self-latch (V6A): a key held since launch never exits by
+                //    itself - its auto-repeat KEYDOWNs pass through - until its release is
+                //    observed; the same key then exits (README: release first, press to exit).
+                keybd_event(0x10, 0, 0, UIntPtr.Zero); // Shift held since before launch
+                try
+                {
+                    using (Process process = Launch())
+                    {
+                        try
+                        {
+                            Thread.Sleep(1200); // pass the 1s arming grace: Shift latched, arming done
+                            for (int repeat = 0; repeat < 3; repeat++)
+                            {
+                                keybd_event(0x10, 0, 0, UIntPtr.Zero); // auto-repeat of the held key
+                                Thread.Sleep(50);
+                            }
+                            Thread.Sleep(300);
+                            Check(!process.HasExited, "Held launch key auto-repeat exited overlay");
+                            keybd_event(0x10, 0, 2, UIntPtr.Zero); // release lifts the latch
+                            Thread.Sleep(400);
+                            ExitByKey(process, 0x10);
+                            Console.WriteLine("PASS G: held launch key auto-repeat passed through; exit after release");
+                        }
+                        finally
+                        {
+                            keybd_event(0x10, 0, 2, UIntPtr.Zero);
+                            KillIfNeeded(process);
+                        }
+                    }
+                }
+                finally { keybd_event(0x10, 0, 2, UIntPtr.Zero); }
+
+                // H. Phantom-key regression (V6A): a key state stuck down without real
+                //    events (external down injection with no up) must not disable the exit
+                //    paths: after the grace window only that key's own exit input stays
+                //    suppressed - SPACE still closes the mask.
+                keybd_event(0x1B, 0, 0, UIntPtr.Zero); // phantom ESC down, no up
+                try
+                {
+                    using (Process process = Launch())
+                    {
+                        try
+                        {
+                            Thread.Sleep(1200); // pass the 1s arming grace under the phantom
+                            Check(!process.HasExited, "Phantom key alone closed the overlay");
+                            ExitByKey(process, 0x20);
+                            Console.WriteLine("PASS H: phantom held key did not block arming; SPACE exited");
+                        }
+                        finally { KillIfNeeded(process); }
+                    }
+                }
+                finally { keybd_event(0x1B, 0, 2, UIntPtr.Zero); } // clear the phantom on every path
+
                 Check(maxIdleMs <= 2000, "InputIdle exceeded budget");
-                Console.WriteLine("PASS TOTAL: A-F; " + screens.Length + " displays; max InputIdle " + maxIdleMs + " ms (limit 2000)");
+                Console.WriteLine("PASS TOTAL: A-H; " + screens.Length + " displays; max InputIdle " + maxIdleMs + " ms (limit 2000)");
                 return 0;
             }
             finally

@@ -8,7 +8,8 @@ using System.Windows.Forms;
 
 // Mouse-exit verifier for the per-monitor overlay: one window per screen, each
 // window receiving the mouse messages for its own screen. Move/wheel/down keep
-// the mask open; button up closes it (frozen v1 semantics).
+// the mask open; button up closes it (frozen v1 semantics). Also covers the
+// phantom-key regression (V6A): a stuck key state must not disable mouse exit.
 internal static class VerifyMouseExit
 {
     private delegate bool EnumProc(IntPtr hwnd, IntPtr data);
@@ -23,6 +24,7 @@ internal static class VerifyMouseExit
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool SetProcessDpiAwarenessContext(IntPtr value);
     [DllImport("user32.dll")] private static extern bool SetProcessDPIAware();
+    [DllImport("user32.dll")] private static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
 
     private sealed class ButtonCase
     {
@@ -211,7 +213,47 @@ internal static class VerifyMouseExit
                     }
                 }
             }
-            Console.WriteLine("PASS TOTAL: " + completed + "/5 buttons; " + moveCount + " movement messages; " + wheelCount + " wheel messages; " + screens.Length + " windows per launch");
+            // Phantom-key regression (V6A): a stuck key state (down injection with no up)
+            // must not disable the mouse exit path either - a click still closes the mask
+            // once the arming grace window has passed.
+            keybd_event(0x1B, 0, 0, UIntPtr.Zero); // phantom ESC down, no up
+            try
+            {
+                IntPtr previousWindow = GetForegroundWindow();
+                ProcessStartInfo start = new ProcessStartInfo(args[0]);
+                start.UseShellExecute = false;
+                start.WindowStyle = ProcessWindowStyle.Hidden;
+                using (Process process = Process.Start(start))
+                {
+                    try
+                    {
+                        Check(process.WaitForInputIdle(5000), "UI did not become ready");
+                        Thread.Sleep(1400); // arming grace (1s) + margin while the phantom is down
+                        List<IntPtr> windows = OverlayWindows(process, screens);
+                        Rectangle firstRect = screens[0].Bounds;
+                        IntPtr firstWindow = WindowForScreen(windows, screens[0]);
+                        Post(firstWindow, 0x0201, 1, firstRect.Width / 2, firstRect.Height / 2); // left down
+                        Post(firstWindow, 0x0202, 0, firstRect.Width / 2, firstRect.Height / 2); // left up
+                        Check(process.WaitForExit(3000), "Left button up did not close overlay under phantom key");
+                        Check(process.ExitCode == 0, "Overlay exited with an error under phantom key");
+                        Console.WriteLine("PASS: Left click under phantom held key exited");
+                    }
+                    finally
+                    {
+                        // Only terminate the exact process this iteration launched.
+                        if (!process.HasExited)
+                        {
+                            try { process.Kill(); }
+                            catch (InvalidOperationException) { }
+                            Check(process.WaitForExit(3000), "Spawned overlay did not exit during cleanup");
+                        }
+                        if (previousWindow != IntPtr.Zero) SetForegroundWindow(previousWindow);
+                    }
+                }
+            }
+            finally { keybd_event(0x1B, 0, 2, UIntPtr.Zero); } // clear the phantom on every path
+
+            Console.WriteLine("PASS TOTAL: " + completed + "/5 buttons; " + moveCount + " movement messages; " + wheelCount + " wheel messages; " + screens.Length + " windows per launch; phantom-key click exit OK");
             return 0;
         }
         catch (Exception ex)

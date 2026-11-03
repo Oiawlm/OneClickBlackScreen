@@ -19,6 +19,16 @@ internal static class NativeMethods
     internal static extern IntPtr SetCursor(IntPtr cursor);
     [DllImport("user32.dll")]
     internal static extern short GetAsyncKeyState(int key);
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct KbdLlHook
+    {
+        internal uint VkCode;
+        internal uint ScanCode;
+        internal uint Flags;
+        internal uint Time;
+        internal UIntPtr ExtraInfo;
+    }
 }
 
 // One borderless topmost mask window covering a single monitor. All exit-input and
@@ -65,7 +75,7 @@ internal sealed class OverlayForm : Form
     {
         base.OnMouseUp(e);
         // Finish the click on the overlay before closing, avoiding click-through.
-        owner.NotifyMouseUp();
+        owner.NotifyMouseUp(e.Button);
     }
 
     protected override void WndProc(ref Message m)
@@ -90,6 +100,8 @@ internal sealed class OverlayForm : Form
 
 // Owns one OverlayForm per monitor plus the shared exit machinery of the frozen v1
 // behavior: the low-level keyboard hook, the arming timer and a single close path.
+// Arming keeps the v1 wait-for-release semantics for a bounded grace window, then
+// latches keys that never release (phantom states) instead of blocking forever.
 internal sealed class OverlayGroup : ApplicationContext
 {
     private const int WM_KEYDOWN = 0x0100, WM_SYSKEYDOWN = 0x0104;
@@ -107,19 +119,22 @@ internal sealed class OverlayGroup : ApplicationContext
     private int shownCount;
     private int openCount;
 
+    // v1 waits until every key has been released once; a key held longer than this
+    // grace window (deliberate hold or phantom state) degrades to a self-only latch.
+    private const int ArmGraceTicks = 10; // beats x 100ms = ~1s
+    private readonly bool[] keyLatched = new bool[255]; // VK-indexed exit latch
+    private readonly int[] keyHeldTicks = new int[255]; // consecutive beats held down
+
     public OverlayGroup(MaskConfig config)
     {
         this.config = config;
         keyboardCallback = OnKeyboard;
         // Wait for launch keys/buttons to be released before accepting exit input.
+        // A key still down past the grace window (a deliberately held launch key, or a
+        // phantom state injected by external software) no longer blocks arming: only
+        // its own exit input stays suppressed until a release is observed (I1/I2).
         armTimer.Interval = 100;
-        armTimer.Tick += delegate
-        {
-            for (int key = 1; key <= 254; key++)
-                if ((NativeMethods.GetAsyncKeyState(key) & 0x8000) != 0) return;
-            armed = true;
-            armTimer.Stop();
-        };
+        armTimer.Tick += ArmTick;
         try
         {
             Screen[] screens = Screen.AllScreens;
@@ -169,6 +184,40 @@ internal sealed class OverlayGroup : ApplicationContext
         return null;
     }
 
+    // One 100ms arming beat. v1 semantics: a key still down keeps the exits closed.
+    // Past the grace window the key stops blocking arming and only its own exit input
+    // stays latched (phantom tolerance, I2) until a release is observed (I1).
+    private void ArmTick(object sender, EventArgs e)
+    {
+        bool blocking = false; // a key still inside its v1 launch-release wait
+        bool latched = false;  // a latched key whose release is not observed yet
+        for (int key = 1; key <= 254; key++)
+        {
+            if ((NativeMethods.GetAsyncKeyState(key) & 0x8000) == 0)
+            {
+                // Release observed once: the key can trigger exits again (I1).
+                keyHeldTicks[key] = 0;
+                keyLatched[key] = false;
+            }
+            else if (keyLatched[key])
+            {
+                latched = true;
+            }
+            else if (!armed && ++keyHeldTicks[key] < ArmGraceTicks)
+            {
+                blocking = true;
+            }
+            else if (!armed)
+            {
+                keyLatched[key] = true;
+                latched = true;
+            }
+            // else: ordinary post-arm input - exits exactly like v1, never latches.
+        }
+        if (!armed && !blocking) armed = true;
+        if (armed && !latched) armTimer.Stop(); // nothing left to observe
+    }
+
     private IntPtr OnKeyboard(int code, IntPtr message, IntPtr data)
     {
         try
@@ -176,14 +225,21 @@ internal sealed class OverlayGroup : ApplicationContext
             if (code >= 0 && armed &&
                 (message.ToInt32() == WM_KEYDOWN || message.ToInt32() == WM_SYSKEYDOWN))
             {
-                if (!closing)
+                uint vk = ((NativeMethods.KbdLlHook)Marshal.PtrToStructure(
+                    data, typeof(NativeMethods.KbdLlHook))).VkCode;
+                // A latched launch/phantom key passes through untouched until its
+                // release has been observed: it must not exit (I1) nor be swallowed.
+                if (vk == 0 || vk > 254 || !keyLatched[(int)vk])
                 {
-                    closing = true;
-                    Control invoker = SelectInvoker();
-                    if (invoker != null) invoker.BeginInvoke(new Action(CloseAll));
-                    else CloseAll();
+                    if (!closing)
+                    {
+                        closing = true;
+                        Control invoker = SelectInvoker();
+                        if (invoker != null) invoker.BeginInvoke(new Action(CloseAll));
+                        else CloseAll();
+                    }
+                    return new IntPtr(1);
                 }
-                return new IntPtr(1);
             }
         }
         catch { }
@@ -198,9 +254,26 @@ internal sealed class OverlayGroup : ApplicationContext
         return null;
     }
 
-    internal void NotifyMouseUp()
+    internal void NotifyMouseUp(MouseButtons button)
     {
-        if (armed && !closing) CloseAll();
+        // Same latch for the launching button itself: completing the launch click must
+        // not close the mask (I1); any other button, or this one after its release has
+        // been observed, closes it.
+        int key = ButtonKey(button);
+        if (armed && !closing && (key == 0 || !keyLatched[key])) CloseAll();
+    }
+
+    private static int ButtonKey(MouseButtons button)
+    {
+        switch (button)
+        {
+            case MouseButtons.Left: return 1;
+            case MouseButtons.Right: return 2;
+            case MouseButtons.Middle: return 4;
+            case MouseButtons.XButton1: return 5;
+            case MouseButtons.XButton2: return 6;
+            default: return 0;
+        }
     }
 
     internal void NotifyFormClosing(OverlayForm form)
