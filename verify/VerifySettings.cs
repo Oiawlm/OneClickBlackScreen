@@ -322,13 +322,25 @@ internal static class VerifySettings
                 int clientWidth = x + width + edge;
                 int clientHeight = y + buttonRow + edge;
 
-                // ---- collect the direct children and identify each one.
+                // ---- collect the application's own direct children and identify
+                // each one. Ownership is decided positively: the dialog is a
+                // WinForms window and every control it creates is registered
+                // under the "WindowsForms10." class prefix - the same prefix the
+                // lookups below key on. EnumChildWindows also reports foreign
+                // furniture the OS injects into the window, e.g. the MS IME TSF
+                // notify window whose appearance is non-deterministic run to run
+                // (same machine once failed saw 25, then passed saw 24); the
+                // mirror must assert the app's own control tree, not the raw
+                // count, so non-owned children never enter the list.
                 System.Drawing.Point origin = new System.Drawing.Point();
                 Check(ClientToScreen(hwnd, ref origin), "ClientToScreen failed");
                 List<ChildInfo> children = new List<ChildInfo>();
                 Check(EnumChildWindows(hwnd, delegate(IntPtr child, IntPtr data)
                 {
                     if (GetParent(child) != hwnd) return true;
+                    StringBuilder className = new StringBuilder(64);
+                    GetClassName(child, className, className.Capacity);
+                    if (!IsAppOwnedClass(className.ToString())) return true;
                     children.Add(ReadChild(child, origin));
                     return true;
                 }, IntPtr.Zero), "EnumChildWindows failed");
@@ -498,6 +510,16 @@ internal static class VerifySettings
         info.Client.Right = info.Screen.Right - origin.X;
         info.Client.Bottom = info.Screen.Bottom - origin.Y;
         return info;
+    }
+
+    // Positive ownership test for direct children: WinForms registers every
+    // control class it creates with the "WindowsForms10." prefix, so a child
+    // carrying it belongs to the app's own control tree. Anything else is a
+    // foreign window the OS injected (IME TSF notify windows and friends) and
+    // is excluded for not being ours - never by a per-intruder blacklist.
+    private static bool IsAppOwnedClass(string className)
+    {
+        return className.ToUpperInvariant().StartsWith("WINDOWSFORMS10.");
     }
 
     private static bool IsButtonClass(string className)
