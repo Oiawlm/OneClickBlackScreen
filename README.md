@@ -119,10 +119,10 @@ verify.cmd
 
 | 文档 | 内容 |
 |---|---|
-| [RESEARCH-V1.md](RESEARCH-V1.md) ~ [RESEARCH-V5.md](RESEARCH-V5.md) | 各轮唯一事实源：调研结论与决策表 |
-| [PLAN-V5.md](PLAN-V5.md) | v5 轮总编排：轨道划分、波次与并行契约 |
-| [GOAL-V1-PROMPT.md](GOAL-V1-PROMPT.md) ~ [GOAL-V5D-PROMPT.md](GOAL-V5D-PROMPT.md) | 各执行窗口的 GOAL 提示词 |
-| [docs/VERIFY-V1.md](docs/VERIFY-V1.md) ~ [docs/VERIFY-V5.md](docs/VERIFY-V5.md) | 各轮验证记录：命令、输出与证据（v5 含 A/B/C 三轨交付与发布验收） |
+| [docs/handoff/archive/](docs/handoff/archive/) | V1~V7 全部 45 份历史轮次文档原样归档（RESEARCH/PLAN/GOAL/VERIFY/REVIEW 等，只读） |
+| [docs/handoff/2026-11-05-v8-structure/](docs/handoff/2026-11-05-v8-structure/) | 当前批次（v8 轮）：本轮 RESEARCH/PLAN/GOAL 与执行窗 VERIFY 证据 |
+| [docs/lessons.md](docs/lessons.md) | 坑库：跨轮踩坑汇总（现象→根因→正解→出处） |
+| [docs/multi-window.md](docs/multi-window.md) | 多窗口并行规程：worktree 创建/推送/清理模板与写权归属 |
 | [AGENTS.md](AGENTS.md) | 多窗口协作契约：独占资源、单一写者、冻结区与红线（各 AI 窗口自动注入） |
 | [baseline/](baseline/) | v1 原始源码归档（冻结不改，行为基准） |
 
