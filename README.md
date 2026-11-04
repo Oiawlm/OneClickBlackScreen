@@ -37,13 +37,13 @@
 
 ## 📦 下载与安装
 
-1. 打开 [Releases 页](https://github.com/Oiawlm/OneClickBlackScreen/releases)，下载最新版（当前 [v1.0.1](https://github.com/Oiawlm/OneClickBlackScreen/releases/tag/v1.0.1)）：
-   - `OneClickBlackScreen-v1.0.1.zip`（推荐，Release 页显示名「一键黑屏 v1.0.1 完整包」）：含主程序 exe、同名 `.exe.config`、`icon-settings.ico` 与使用说明，解压即用；
+1. 打开 [Releases 页](https://github.com/Oiawlm/OneClickBlackScreen/releases)，下载最新版（当前 [v1.0.2](https://github.com/Oiawlm/OneClickBlackScreen/releases/tag/v1.0.2)）：
+   - `OneClickBlackScreen-v1.0.2.zip`（推荐，Release 页显示名「一键黑屏 v1.0.2 完整包」）：含主程序 exe、同名 `.exe.config`、`icon-settings.ico` 与使用说明，解压即用；
    - `OneClickBlackScreen.exe`：裸单文件，适合最小化使用，也可被程序内更新器直连下载。
 2. （推荐）校验文件完整性——在 PowerShell 或 cmd 中运行：
 
    ```
-   certutil -hashfile OneClickBlackScreen-v1.0.1.zip SHA256
+   certutil -hashfile OneClickBlackScreen-v1.0.2.zip SHA256
    ```
 
    将输出的哈希与 Releases 页 `SHA256SUMS` 文件中对应行逐字比对，一致即通过。
@@ -109,7 +109,7 @@ verify.cmd
 ```
 
 - `build.cmd`：用 `C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe` 直编 `src\`，产物输出到 `dist\`（csc 为 Windows 自带，无需安装任何 SDK）。
-- `verify.cmd`：编译并运行七件套验证器（VerifyConfig / VerifySettings / VerifyMouseExit / VerifyOverlay / VerifyIcon / VerifyUpdate / VerifyIdle；会短暂闪现遮罩，属预期行为）。
+- `verify.cmd`：编译并运行七件套验证器（VerifyConfig / VerifySettings / VerifyMouseExit / VerifyOverlay / VerifyIcon / VerifyUpdate / VerifyIdle；会短暂闪现遮罩，属预期行为）。验证会注入全局键鼠——运行期间请勿操作键盘鼠标，多个验证不可并行（套件内置闸门，撞闸 BUSY）。
 - `install.ps1`：幂等同步桌面快捷方式（双击遮罩 + 设置两个入口）。
 - `tools\MakeIcon.cs`：图标生成器（显式重新生成，构建只消费产物）。
 
@@ -123,6 +123,7 @@ verify.cmd
 | [PLAN-V5.md](PLAN-V5.md) | v5 轮总编排：轨道划分、波次与并行契约 |
 | [GOAL-V1-PROMPT.md](GOAL-V1-PROMPT.md) ~ [GOAL-V5D-PROMPT.md](GOAL-V5D-PROMPT.md) | 各执行窗口的 GOAL 提示词 |
 | [docs/VERIFY-V1.md](docs/VERIFY-V1.md) ~ [docs/VERIFY-V5.md](docs/VERIFY-V5.md) | 各轮验证记录：命令、输出与证据（v5 含 A/B/C 三轨交付与发布验收） |
+| [AGENTS.md](AGENTS.md) | 多窗口协作契约：独占资源、单一写者、冻结区与红线（各 AI 窗口自动注入） |
 | [baseline/](baseline/) | v1 原始源码归档（冻结不改，行为基准） |
 
 协作铁律：双击立即出遮罩的体验冻结不变；上下文只经文件传递，不依赖会话记忆。

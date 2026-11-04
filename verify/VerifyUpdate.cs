@@ -63,16 +63,17 @@ internal static class VerifyUpdate
     private static void CheckVersionTable()
     {
         int[] current = AppInfo.CurrentVersion();
-        Check(current[0] == 1 && current[1] == 0 && current[2] == 1,
-            "AppInfo.CurrentVersion does not read the declared 1.0.1");
-        Check(AppInfo.IsNewer("v1.0.2", current), "v1.0.2 must read newer");
+        Check(current[0] == 1 && current[1] == 0 && current[2] == 2,
+            "AppInfo.CurrentVersion does not read the declared 1.0.2");
+        Check(AppInfo.IsNewer("v1.0.3", current), "v1.0.3 must read newer");
         Check(AppInfo.IsNewer("v1.1.0", current), "v1.1.0 must read newer");
         Check(AppInfo.IsNewer("v2.0.0", current), "v2.0.0 must read newer");
         Check(AppInfo.IsNewer("v10.0.0", current), "v10.0.0 must read newer (numeric order, not string order)");
         Check(!AppInfo.IsNewer("v0.9.9", current), "v0.9.9 must read older");
         Check(!AppInfo.IsNewer("v1.0.0", current), "v1.0.0 must read older, not newer");
-        Check(!AppInfo.IsNewer("v1.0.1", current), "v1.0.1 must read equal, not newer");
-        Check(!AppInfo.IsNewer("1.0.1", current), "bare 1.0.1 must read equal, not newer");
+        Check(!AppInfo.IsNewer("v1.0.1", current), "v1.0.1 must read older, not newer");
+        Check(!AppInfo.IsNewer("v1.0.2", current), "v1.0.2 must read equal, not newer");
+        Check(!AppInfo.IsNewer("1.0.2", current), "bare 1.0.2 must read equal, not newer");
         Check(!AppInfo.IsNewer("v1.0", current), "two segments must fail closed");
         Check(!AppInfo.IsNewer("v1.0.0.1", current), "four segments must fail closed");
         Check(!AppInfo.IsNewer("v1.0.0-beta", current), "prerelease suffix must fail closed");
@@ -81,7 +82,7 @@ internal static class VerifyUpdate
         Check(!AppInfo.IsNewer("", current), "empty tag must fail closed");
         Check(!AppInfo.IsNewer(null, current), "null tag must fail closed");
         Check(!AppInfo.IsNewer("v9999999999.0.0", current), "overflowing segment must fail closed");
-        Check(!AppInfo.IsNewer("v 1.0.1", current), "inner whitespace tag must fail closed");
+        Check(!AppInfo.IsNewer("v 1.0.2", current), "inner whitespace tag must fail closed");
         int[] parsed;
         Check(AppInfo.TryParseVersion("v1.2.3", out parsed)
             && parsed[0] == 1 && parsed[1] == 2 && parsed[2] == 3,
@@ -90,7 +91,7 @@ internal static class VerifyUpdate
             && parsed[0] == 0 && parsed[1] == 20 && parsed[2] == 300,
             "TryParseVersion must accept zero-padded bare versions");
         Check(!AppInfo.TryParseVersion("v.1.2", out parsed), "empty segment must fail closed");
-        Check(!AppInfo.TryParseVersion("V1.0.1", out parsed), "uppercase V prefix must fail closed (our tags are lowercase v)");
+        Check(!AppInfo.TryParseVersion("V1.0.2", out parsed), "uppercase V prefix must fail closed (our tags are lowercase v)");
         Console.WriteLine("PASS: version comparison table (newer/equal/older/malformed, fail-closed)");
     }
 
@@ -209,10 +210,10 @@ internal static class VerifyUpdate
                 Console.WriteLine("PASS: 404 / malformed JSON / missing asset fail closed");
 
                 // -- not newer / malformed tags read as no update (B2).
-                server.LatestJson = BuildLatestJson("v1.0.1", "sha256:" + payloadSha,
+                server.LatestJson = BuildLatestJson("v1.0.2", "sha256:" + payloadSha,
                     payload.Length, server.Base + "/asset", null);
                 Check(Updater.Check(server.Base) == null, "an equal tag must read as no update");
-                server.LatestJson = BuildLatestJson("v1.0.1-rc1", "sha256:" + payloadSha,
+                server.LatestJson = BuildLatestJson("v1.0.2-rc1", "sha256:" + payloadSha,
                     payload.Length, server.Base + "/asset", null);
                 Check(Updater.Check(server.Base) == null, "a malformed tag must read as no update");
                 Console.WriteLine("PASS: equal and malformed tags read as no update");
