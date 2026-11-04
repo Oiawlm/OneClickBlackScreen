@@ -37,6 +37,7 @@ internal static class VerifyUpdate
 
     private static int Main(string[] args)
     {
+        VerifyGate.Enter();
         try
         {
             Check(args.Length == 0, "Usage: VerifyUpdate.exe");

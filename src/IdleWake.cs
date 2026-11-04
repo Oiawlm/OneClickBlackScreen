@@ -13,8 +13,22 @@ using System.Text;
 internal static class IdleWake
 {
     // Single registration point (RESEARCH-V5 §4 cross-track table); the D-track
-    // cleanup script deletes this same ASCII name.
-    public const string TaskName = "OneClickBlackScreen-Idle";
+    // cleanup script deletes this same ASCII name. The BLACKSCREEN_IDLE_TASK_NAME
+    // environment variable overrides the name (V7V seam, configuration over
+    // code): verification registers under a scratch name so the user's real
+    // task is never touched; normal runs see no override and keep this default.
+    public const string DefaultTaskName = "OneClickBlackScreen-Idle";
+
+    // The scheduled-task identity; one definition point, env override first,
+    // the shipped default otherwise.
+    public static string TaskName
+    {
+        get
+        {
+            string seam = Environment.GetEnvironmentVariable("BLACKSCREEN_IDLE_TASK_NAME");
+            return string.IsNullOrEmpty(seam) ? DefaultTaskName : seam;
+        }
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct LASTINPUTINFO

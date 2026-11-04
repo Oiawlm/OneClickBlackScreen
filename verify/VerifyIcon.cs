@@ -25,6 +25,7 @@ internal static class VerifyIcon
     [STAThread]
     private static int Main(string[] args)
     {
+        VerifyGate.Enter();
         try
         {
             Check(args.Length == 1, "Usage: VerifyIcon.exe <exe>");

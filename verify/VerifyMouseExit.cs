@@ -112,6 +112,7 @@ internal static class VerifyMouseExit
     [STAThread]
     private static int Main(string[] args)
     {
+        VerifyGate.Enter();
         int completed = 0, moveCount = 0, wheelCount = 0;
         try
         {

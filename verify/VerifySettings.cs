@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 
@@ -28,6 +29,12 @@ internal static class VerifySettings
     private const uint WM_KEYUP = 0x0101;
     private const int VK_RETURN = 0x0D;
     private const int GW_OWNER = 4;
+
+    // V7V zero footprint: every launched dialog resolves its config through the
+    // USERPROFILE seam (see Start), so all reads and saves land inside this temp
+    // tree; the previous snapshot-overwrite-restore of the user's real
+    // settings.ini is gone because the mechanism is gone.
+    private static string userRoot;
 
     private delegate bool EnumProc(IntPtr hwnd, IntPtr data);
     [StructLayout(LayoutKind.Sequential)] private struct Rect { public int Left, Top, Right, Bottom; }
@@ -451,7 +458,7 @@ internal static class VerifySettings
                             Color sampled = bitmap.GetPixel(px, py);
                             if ((sampled.ToArgb() & 0xFFFFFF) != expectedRgb)
                             {
-                                try { bitmap.Save("_probe\\check6-fail.png", System.Drawing.Imaging.ImageFormat.Png); }
+                                try { bitmap.Save("_probe\\check6-fail-" + process.Id + ".png", System.Drawing.Imaging.ImageFormat.Png); }
                                 catch { }
                                 throw new Exception("primary button sample " + px + "," + py + " is "
                                     + sampled + ", expected Accent #" + expectedRgb.ToString("X6")
@@ -597,37 +604,41 @@ internal static class VerifySettings
     private static void Check(bool condition, string message)
     { if (!condition) throw new Exception(message); }
 
+    // The user's real settings.ini - never resolved by any launched dialog;
+    // hashed before/after the run as the zero-footprint tripwire.
+    private static string RealConfigPath()
+    {
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "BlackScreen", "settings.ini");
+    }
+
+    private static string Sha256HexOrNull(string path)
+    {
+        if (!File.Exists(path)) return null;
+        using (SHA256 sha = SHA256.Create())
+        using (FileStream stream = File.OpenRead(path))
+            return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
+    }
+
     // 5. The Enter contract (B1): inside the multiline box Enter must insert a
     // newline and never save; on the dialog itself Enter must still fire the
     // save button. Both branches deliver WM_KEYDOWN(VK_RETURN) at the message
     // level, like the mouse verifier - branch b attaches the input queues first
     // because dialog-key routing only runs for the focused window (EnterProbe2).
-    // The user's config is snapshotted once and restored byte-for-byte at the
-    // end, whatever happened inside.
+    // V7V: the config under assertion lives in the redirected temp tree; branch
+    // b's save proves the dialog's own save path resolves there as well.
     private static void CheckEnterContract(string exe)
     {
-        string configPath = Path.Combine(Environment.GetFolderPath(
-            Environment.SpecialFolder.LocalApplicationData), "BlackScreen", "settings.ini");
-        bool existed = File.Exists(configPath);
-        byte[] original = existed ? File.ReadAllBytes(configPath) : null;
-        try
-        {
-            CheckEnterNewlines(exe, configPath, existed, original);
-            CheckEnterSaves(exe, configPath);
-        }
-        finally
-        {
-            if (existed) File.WriteAllBytes(configPath, original);
-            else if (File.Exists(configPath)) File.Delete(configPath);
-            bool restored = existed
-                ? File.Exists(configPath) && BytesEqual(File.ReadAllBytes(configPath), original)
-                : !File.Exists(configPath);
-            Check(restored, "user config was not restored byte-for-byte");
-        }
+        string configPath = Path.Combine(userRoot, "AppData", "Local", "BlackScreen", "settings.ini");
+        Directory.CreateDirectory(Path.GetDirectoryName(configPath));
+        byte[] original = Encoding.UTF8.GetBytes("color=#0A0B0C\r\ntext=V3pre\r\n");
+        File.WriteAllBytes(configPath, original);
+        CheckEnterNewlines(exe, configPath, original);
+        CheckEnterSaves(exe, configPath);
     }
 
     // Branch a: Enter delivered straight to the multiline EDIT.
-    private static void CheckEnterNewlines(string exe, string configPath, bool existed, byte[] original)
+    private static void CheckEnterNewlines(string exe, string configPath, byte[] original)
     {
         using (Process process = Start(exe, "--settings"))
         {
@@ -669,8 +680,7 @@ internal static class VerifySettings
                 }
                 Check(after.StartsWith("V3\r\n"),
                     "Enter did not become a newline in the text box: '" + Escape(after) + "'");
-                Check(File.Exists(configPath) == existed, "config existence changed");
-                if (existed) Check(BytesEqual(File.ReadAllBytes(configPath), original),
+                Check(File.Exists(configPath) && BytesEqual(File.ReadAllBytes(configPath), original),
                     "config bytes changed while editing");
                 CloseWindow(process, hwnd, "settings window");
             }
@@ -891,6 +901,14 @@ internal static class VerifySettings
         start.Arguments = argument;
         start.UseShellExecute = false;
         start.WindowStyle = ProcessWindowStyle.Hidden;
+        // The dialog resolves its config via GetFolderPath(LocalApplicationData),
+        // which expands the per-user registry template "%USERPROFILE%\AppData\Local"
+        // against the PROCESS environment and validates the target's existence -
+        // so a USERPROFILE override pointing at the pre-created temp tree moves
+        // the dialog's load and save paths there (the LOCALAPPDATA variable is
+        // ignored by that API; probe evidence in docs/VERIFY-V7V.md). The Enter
+        // save branch below proves the dialog's own save path is redirected.
+        start.EnvironmentVariables["USERPROFILE"] = userRoot;
         return Process.Start(start);
     }
 
@@ -904,6 +922,7 @@ internal static class VerifySettings
     [STAThread]
     private static int Main(string[] args)
     {
+        VerifyGate.Enter();
         try
         {
             Check(args.Length == 1, "Usage: VerifySettings.exe <exe>");
@@ -912,6 +931,13 @@ internal static class VerifySettings
             // sampling points of check 4).
             try { SetProcessDpiAwarenessContext(new IntPtr(-4)); }
             catch (EntryPointNotFoundException) { SetProcessDPIAware(); }
+            string realIni = RealConfigPath();
+            string realShaBefore = Sha256HexOrNull(realIni);
+            userRoot = Path.Combine(Path.GetTempPath(), "VerifySettings_" + DateTime.Now.Ticks.ToString("x"));
+            // The known-folder skeleton the child's GetFolderPath queries validate
+            // for existence; the Enter contract's configs land inside it.
+            Directory.CreateDirectory(Path.Combine(userRoot, "AppData", "Local"));
+            Directory.CreateDirectory(Path.Combine(userRoot, "AppData", "Roaming"));
 
             // 1. --settings opens exactly one normal window, alive until closed.
             using (Process process = Start(args[0], "--settings"))
@@ -982,6 +1008,9 @@ internal static class VerifySettings
             // 6. Geometry mirrors SettingsDialogMetrics and the primary button locks Accent.
             CheckGeometryAndPrimaryColor(args[0]);
 
+            Check(Sha256HexOrNull(realIni) == realShaBefore,
+                "the user's real settings.ini changed during the run (isolation leak)");
+            Console.WriteLine("PASS Z: user's real settings.ini untouched (SHA-256 before == after)");
             Console.WriteLine("PASS TOTAL: 6 settings checks (3 original + theme background + Enter contract + geometry mirror)");
             return 0;
         }
@@ -989,6 +1018,11 @@ internal static class VerifySettings
         {
             Console.Error.WriteLine("FAIL: " + ex.Message);
             return 1;
+        }
+        finally
+        {
+            try { if (Directory.Exists(userRoot)) Directory.Delete(userRoot, true); }
+            catch { }
         }
     }
 }

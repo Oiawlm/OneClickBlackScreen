@@ -36,6 +36,7 @@ internal static class VerifyConfig
     [STAThread]
     private static int Main(string[] args)
     {
+        VerifyGate.Enter();
         int passed = 0;
         Check(args.Length == 0 || args.Length == 1, "Usage: VerifyConfig.exe");
         try
