@@ -11,7 +11,9 @@ using System.Threading;
 // real register/query/delete round trip on the live scheduler, the silent
 // active-session exit of "<exe> --idle" against a temp config, the ShouldShow
 // decision table and the live idle reading. Links src\IdleWake.cs directly;
-// the registered task is removed again in every outcome.
+// every registration goes through the BLACKSCREEN_IDLE_TASK_NAME seam under a
+// scratch name and is removed again in every outcome - the user's real
+// OneClickBlackScreen-Idle task is never touched (V7V).
 internal static class VerifyIdle
 {
     private static string exePath;
@@ -94,15 +96,21 @@ internal static class VerifyIdle
     }
 
     // 3. Negative path: with idle on but the session active, "--idle" must exit
-    //    within the 2s budget without ever showing a window. The child reads a
-    //    temp LOCALAPPDATA tree so the user's real config is never touched.
+    //    within the 2s budget without ever showing a window. The child resolves
+    //    its config through the USERPROFILE seam (V7V: GetFolderPath expands the
+    //    "%USERPROFILE%\AppData\Local" registry template against the process
+    //    environment and existence-validates it - the LOCALAPPDATA variable is
+    //    ignored by that API; probe evidence in docs/VERIFY-V7V.md), so the
+    //    user's real config is never even resolved.
     private static void CheckIdleExitsSilently()
     {
         string root = Path.Combine(Path.GetTempPath(), "VerifyIdle_" + DateTime.Now.Ticks.ToString("x"));
         try
         {
-            string configDir = Path.Combine(root, "appdata", "BlackScreen");
+            string profile = Path.Combine(root, "profile");
+            string configDir = Path.Combine(profile, "AppData", "Local", "BlackScreen");
             Directory.CreateDirectory(configDir);
+            Directory.CreateDirectory(Path.Combine(profile, "AppData", "Roaming"));
             File.WriteAllBytes(Path.Combine(configDir, "settings.ini"),
                 Encoding.UTF8.GetBytes("color=#010203\r\ntext=\r\nidle=5\r\n"));
             NudgeMouse();
@@ -110,7 +118,7 @@ internal static class VerifyIdle
             start.Arguments = "--idle";
             start.UseShellExecute = false;
             start.CreateNoWindow = true;
-            start.EnvironmentVariables["LOCALAPPDATA"] = Path.Combine(root, "appdata");
+            start.EnvironmentVariables["USERPROFILE"] = profile;
             using (Process process = Process.Start(start))
             {
                 Stopwatch watch = Stopwatch.StartNew();
@@ -184,10 +192,15 @@ internal static class VerifyIdle
     [STAThread]
     private static int Main(string[] args)
     {
+        VerifyGate.Enter();
         try
         {
             Check(args.Length == 1, "Usage: VerifyIdle.exe <exe>");
             exePath = args[0];
+            // Task-name seam (V7V): IdleWake.TaskName reads this override, so
+            // Ensure/Exists/Remove below - including the failure-path cleanup in
+            // the catch - all target the scratch task, never the user's real one.
+            Environment.SetEnvironmentVariable("BLACKSCREEN_IDLE_TASK_NAME", "OneClickBlackScreen-Idle-Verify");
             CheckTaskXml();
             CheckRegistrationLoop();
             CheckIdleExitsSilently();

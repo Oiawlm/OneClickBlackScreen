@@ -5,6 +5,7 @@ using System.IO;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 
 // Hand-written GitHub Releases updater (B1/B3-B6, R1): zero dependencies beyond
 // the BCL, so the single-exe csc build stays intact. Check() reads the
@@ -119,37 +120,104 @@ internal static class Updater
         }
     }
 
+    // Machine-wide exclusion for the on-disk swap (V7S): the settings window is
+    // deliberately multi-instance, so two instances can reach this swap for the
+    // same exe at the same time, and the backup the rollback chain depends on
+    // is one well-known name - an unserialized second entrant deletes the first
+    // one's live backup or double-replaces the target. The exe lives on a
+    // machine-shared path (every user, every session), so the mutex is
+    // Global\; the mask mutex stays Local\ because a mask per desktop is the
+    // intended semantics (U3) - the asymmetry is first-principles correct.
+    private const string UpdateMutexName = @"Global\BlackScreen.Update";
+
+    // Bounded wait so a wedged holder can never freeze the settings UI forever.
+    // The swap is two metadata ops plus one local copy, so a healthy holder
+    // releases within milliseconds; reaching the bound means the other
+    // instance is genuinely stuck and the waiter reports the busy failure.
+    private const int UpdateMutexWaitMs = 10000;
+
     // Phase 2: swap the exe in three steps - remove any stale .old, rename the
     // running image to .old (renaming a running image is allowed; an in-place
     // replace would throw, R1), copy the verified file into place. A failure
     // after the rename rolls the backup back so the app keeps booting; the
     // .old left by a success is cleaned at the next Program.Main entry (B6).
+    // The whole sequence - pre-clean, rename, copy and the rollback path -
+    // runs under the update mutex (V7S). A waiter that acquires after a
+    // concurrent instance already finished finds the target identical to the
+    // downloaded bytes and returns as a no-op success: same end state and same
+    // success the user asked for, without a second swap.
     internal static void ReplaceSequence(string downloadedPath, string targetPath)
     {
-        string backup = targetPath + ".old";
-        if (File.Exists(backup)) File.Delete(backup);
-        try
+        using (Mutex mutex = new Mutex(false, UpdateMutexName))
         {
-            File.Move(targetPath, backup);
-        }
-        catch (Exception ex)
-        {
-            throw new IOException("无法备份当前程序（" + ex.Message + "），未做任何改动。", ex);
-        }
-        try
-        {
-            File.Copy(downloadedPath, targetPath, false);
-        }
-        catch (Exception ex)
-        {
+            bool owned = false;
             try
             {
-                if (File.Exists(targetPath)) File.Delete(targetPath);
-                File.Move(backup, targetPath);
+                try { owned = mutex.WaitOne(UpdateMutexWaitMs); }
+                catch (AbandonedMutexException) { owned = true; }
+                if (!owned)
+                    throw new IOException("另一更新正在进行，请稍后重试。");
+                string downloadedSha = Sha256HexOrNull(downloadedPath);
+                if (downloadedSha != null && downloadedSha == Sha256HexOrNull(targetPath)) return;
+                string backup = targetPath + ".old";
+                if (File.Exists(backup)) File.Delete(backup);
+                try
+                {
+                    File.Move(targetPath, backup);
+                }
+                catch (Exception ex)
+                {
+                    throw new IOException("无法备份当前程序（" + ex.Message + "），未做任何改动。", ex);
+                }
+                try
+                {
+                    File.Copy(downloadedPath, targetPath, false);
+                }
+                catch (Exception ex)
+                {
+                    try
+                    {
+                        if (File.Exists(targetPath)) File.Delete(targetPath);
+                        File.Move(backup, targetPath);
+                    }
+                    catch { }
+                    throw new IOException("写入新版本失败（" + ex.Message + "），已还原原版本。", ex);
+                }
             }
-            catch { }
-            throw new IOException("写入新版本失败（" + ex.Message + "），已还原原版本。", ex);
+            finally
+            {
+                if (owned) mutex.ReleaseMutex();
+            }
         }
+    }
+
+    // B6 startup cleanup, riding the same mutex as the swap (V7S): a leftover
+    // .old is only leftover when no swap is in flight, and an unserialized
+    // startup delete could destroy a concurrent swap's live backup. The
+    // zero-timeout probe is exactly the needed semantics - mutex free means no
+    // swap is running so the delete is safe; mutex held means the .old belongs
+    // to a live swap, so the deletion simply waits for the next start. Stays
+    // best-effort like the inline delete it replaces.
+    internal static void DeleteStaleBackup(string exePath)
+    {
+        try
+        {
+            using (Mutex mutex = new Mutex(false, UpdateMutexName))
+            {
+                bool owned = false;
+                try
+                {
+                    try { owned = mutex.WaitOne(0); }
+                    catch (AbandonedMutexException) { owned = true; }
+                    if (owned) try { File.Delete(exePath + ".old"); } catch { }
+                }
+                finally
+                {
+                    if (owned) mutex.ReleaseMutex();
+                }
+            }
+        }
+        catch { }
     }
 
     // WebClient follows the 302 to the signed URL by itself (R1); the stream
@@ -178,15 +246,26 @@ internal static class Updater
         if (onProgress != null) onProgress(100);
     }
 
+    // Streamed SHA-256 as lowercase hex; unreadable file reads as null. The
+    // download verification turns null into the checksum failure below, and
+    // the under-lock recheck treats null as "not a no-op" so the swap itself
+    // surfaces the real error - one hashing path for both callers.
+    private static string Sha256HexOrNull(string path)
+    {
+        try
+        {
+            using (FileStream stream = new FileStream(path, FileMode.Open, FileAccess.Read))
+            using (SHA256 sha = SHA256.Create())
+            {
+                return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
+            }
+        }
+        catch { return null; }
+    }
+
     private static void VerifySha256(string path, string expected)
     {
-        string actual;
-        using (FileStream stream = new FileStream(path, FileMode.Open, FileAccess.Read))
-        using (SHA256 sha = SHA256.Create())
-        {
-            actual = BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
-        }
-        if (string.CompareOrdinal(actual, expected) != 0)
+        if (string.CompareOrdinal(Sha256HexOrNull(path), expected) != 0)
             throw new InvalidOperationException("SHA-256 校验失败，下载文件与官方发布不一致，已拒绝更新。");
     }
 

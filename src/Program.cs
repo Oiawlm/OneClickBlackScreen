@@ -11,8 +11,10 @@ internal static class Program
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
         // Leftover backup from a previous self-update (B6): remove it best-effort
-        // in every mode; a locked file simply waits for the next start.
-        try { File.Delete(Application.ExecutablePath + ".old"); } catch { }
+        // in every mode; a locked file simply waits for the next start. The
+        // delete rides the update mutex (V7S) so a starting instance cannot
+        // destroy the live backup of a swap running in another instance.
+        Updater.DeleteStaleBackup(Application.ExecutablePath);
         if (args.Length == 0) return RunOverlay();
         if (args.Length == 1 && args[0] == "--settings") return RunSettings();
         if (args.Length == 1 && args[0] == "--idle") return RunIdleCheck();

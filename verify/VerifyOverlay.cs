@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -30,61 +31,46 @@ internal static class VerifyOverlay
     [DllImport("user32.dll")] private static extern bool SetProcessDPIAware();
 
     private static string exePath;
-    private static byte[] configBackup;
-    private static bool configExisted;
+    // V7V zero footprint: children resolve config via the USERPROFILE seam
+    // (NewStart) into this temp tree; the old backup-overwrite-restore is gone.
+    private static string userRoot;
+    private static string configPath;
     private static long maxIdleMs;
 
     private static void Check(bool condition, string message)
     { if (!condition) throw new Exception(message); }
 
-    private static string ConfigPath()
+    private static string Sha256HexOrNull(string path)
     {
-        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "BlackScreen", "settings.ini");
-    }
-
-    private static void BackupConfig()
-    {
-        string path = ConfigPath();
-        configExisted = File.Exists(path);
-        configBackup = configExisted ? File.ReadAllBytes(path) : null;
-    }
-
-    private static void RestoreConfig()
-    {
-        try
-        {
-            string path = ConfigPath();
-            if (configExisted) File.WriteAllBytes(path, configBackup);
-            else if (File.Exists(path)) File.Delete(path);
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine("WARN: could not restore config: " + ex.Message);
-        }
-    }
-
-    private static void RemoveConfig()
-    {
-        string path = ConfigPath();
-        if (File.Exists(path)) File.Delete(path);
+        if (!File.Exists(path)) return null;
+        using (SHA256 sha = SHA256.Create())
+            return BitConverter.ToString(sha.ComputeHash(File.ReadAllBytes(path))).Replace("-", "").ToLowerInvariant();
     }
 
     private static void WriteConfig(string colorHex, string text)
     {
-        string path = ConfigPath();
-        Directory.CreateDirectory(Path.GetDirectoryName(path));
+        Directory.CreateDirectory(Path.GetDirectoryName(configPath));
         string body = "color=" + colorHex + "\r\n" + (text == null ? "" : "text=" + text + "\r\n");
-        File.WriteAllText(path, body);
+        File.WriteAllText(configPath, body);
     }
 
-    private static Process Launch()
+    // USERPROFILE seam: GetFolderPath(LocalApplicationData) expands the
+    // "%USERPROFILE%\AppData\Local" template against the process env
+    // (LOCALAPPDATA is ignored; docs/VERIFY-V7V.md); the B/C pixel checks prove
+    // the child really reads the redirected config.
+    private static ProcessStartInfo NewStart()
     {
         ProcessStartInfo start = new ProcessStartInfo(exePath);
         start.UseShellExecute = false;
         start.WindowStyle = ProcessWindowStyle.Hidden;
+        start.EnvironmentVariables["USERPROFILE"] = userRoot;
+        return start;
+    }
+
+    private static Process Launch()
+    {
         Stopwatch watch = Stopwatch.StartNew();
-        Process process = Process.Start(start);
+        Process process = Process.Start(NewStart());
         Check(process.WaitForInputIdle(5000), "UI did not become ready");
         watch.Stop();
         if (watch.ElapsedMilliseconds > maxIdleMs) maxIdleMs = watch.ElapsedMilliseconds;
@@ -267,6 +253,7 @@ internal static class VerifyOverlay
     [STAThread]
     private static int Main(string[] args)
     {
+        VerifyGate.Enter();
         try
         {
             Check(args.Length == 1, "Usage: VerifyOverlay.exe <exe>");
@@ -275,12 +262,21 @@ internal static class VerifyOverlay
             catch (EntryPointNotFoundException) { SetProcessDPIAware(); }
             Screen[] screens = Screen.AllScreens;
             Check(screens.Length > 0, "No usable displays");
-            BackupConfig();
+            // Real settings.ini hashed before/after as the zero-footprint tripwire.
+            string realIni = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "BlackScreen", "settings.ini");
+            string realShaBefore = Sha256HexOrNull(realIni);
+            userRoot = Path.Combine(Path.GetTempPath(), "VerifyOverlay_" + DateTime.Now.Ticks.ToString("x"));
 
             try
             {
+                // Known-folder skeleton GetFolderPath existence-validates.
+                Directory.CreateDirectory(Path.Combine(userRoot, "AppData", "Local"));
+                Directory.CreateDirectory(Path.Combine(userRoot, "AppData", "Roaming"));
+                configPath = Path.Combine(userRoot, "AppData", "Local", "BlackScreen", "settings.ini");
+
                 // A. No config file: v1-equivalent pure black, no text.
-                RemoveConfig();
+                if (File.Exists(configPath)) File.Delete(configPath);
                 using (Process process = Launch())
                 {
                     try
@@ -319,7 +315,7 @@ internal static class VerifyOverlay
                 }
 
                 // D. Keyboard exit: 3 keys x {foreground, background} + Alt syskey pass.
-                RemoveConfig();
+                if (File.Exists(configPath)) File.Delete(configPath);
                 foreach (byte key in new byte[] { 0x87, 0x1B, 0x10, 0x12 })
                 {
                     foreach (bool background in new bool[] { false, true })
@@ -386,10 +382,7 @@ internal static class VerifyOverlay
                 {
                     try
                     {
-                        ProcessStartInfo start = new ProcessStartInfo(exePath);
-                        start.UseShellExecute = false;
-                        start.WindowStyle = ProcessWindowStyle.Hidden;
-                        using (Process second = Process.Start(start))
+                        using (Process second = Process.Start(NewStart()))
                         {
                             Check(second.WaitForExit(3000), "Second instance did not self-exit");
                             Check(second.ExitCode == 0, "Second instance exit code " + second.ExitCode);
@@ -456,12 +449,15 @@ internal static class VerifyOverlay
                 finally { keybd_event(0x1B, 0, 2, UIntPtr.Zero); } // clear the phantom on every path
 
                 Check(maxIdleMs <= 2000, "InputIdle exceeded budget");
+                Check(Sha256HexOrNull(realIni) == realShaBefore,
+                    "the user's real settings.ini changed during the run (isolation leak)");
+                Console.WriteLine("PASS Z: user's real settings.ini untouched (SHA-256 before == after)");
                 Console.WriteLine("PASS TOTAL: A-H; " + screens.Length + " displays; max InputIdle " + maxIdleMs + " ms (limit 2000)");
                 return 0;
             }
             finally
             {
-                RestoreConfig();
+                try { if (Directory.Exists(userRoot)) Directory.Delete(userRoot, true); } catch { }
             }
         }
         catch (Exception ex)

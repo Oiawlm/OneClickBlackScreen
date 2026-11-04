@@ -747,9 +747,13 @@ internal sealed class SettingsDialog : Form
             }
             // The swap itself runs on the UI thread: the dialog cannot close
             // mid-replace, so the running exe is never left half-copied (B6).
+            // The swap takes the machine-wide update mutex (V7S), so a second
+            // instance applying at the same moment waits briefly here - the
+            // install label keeps that wait readable instead of a bare freeze.
             SafeInvoke(delegate
             {
                 if (IsDisposed) return;
+                updateStatusLabel.Text = "正在安装…";
                 try
                 {
                     Updater.ReplaceSequence(downloaded, Application.ExecutablePath);

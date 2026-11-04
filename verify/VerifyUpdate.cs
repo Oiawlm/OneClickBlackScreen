@@ -37,6 +37,7 @@ internal static class VerifyUpdate
 
     private static int Main(string[] args)
     {
+        VerifyGate.Enter();
         try
         {
             Check(args.Length == 0, "Usage: VerifyUpdate.exe");
@@ -250,12 +251,79 @@ internal static class VerifyUpdate
                 }
                 Check(BytesEqual(File.ReadAllBytes(locked), oldBytes), "blocked replace must leave the target unchanged");
                 Console.WriteLine("PASS: replace sequence (stale .old cleared, rollback restored, blocked pre-clean)");
+
+                // -- concurrent replaces on the same target (V7S): two flows
+                // released by a start gun enter ReplaceSequence together, the
+                // on-disk replay of two settings windows clicking 立即更新 at
+                // the same time. Unfixed this collides nearly every round (one
+                // flow loses the backup race or copies onto a recreated
+                // target); under the update mutex exactly one effective swap
+                // runs, the second flow ends as the no-op success - proven by
+                // the backup still holding the old bytes, since a second full
+                // swap would have renamed the new bytes into the backup name.
+                const int RaceRounds = 50;
+                int badRounds = 0;
+                StringBuilder raceSamples = new StringBuilder();
+                for (int round = 1; round <= RaceRounds; round++)
+                {
+                    string twin = Path.Combine(work, "race-" + round + ".exe");
+                    File.WriteAllBytes(twin, oldBytes);
+                    File.WriteAllBytes(twin + ".old", Encoding.UTF8.GetBytes("STALE"));
+                    string srcA = Path.Combine(work, "race-a-" + round + ".bin");
+                    string srcB = Path.Combine(work, "race-b-" + round + ".bin");
+                    File.WriteAllBytes(srcA, payload);
+                    File.WriteAllBytes(srcB, payload);
+                    string[] errors = RaceReplace(twin, srcA, srcB);
+                    byte[] terminal = File.Exists(twin) ? File.ReadAllBytes(twin) : null;
+                    bool targetOk = terminal != null && BytesEqual(terminal, payload);
+                    bool backupOk = File.Exists(twin + ".old")
+                        && BytesEqual(File.ReadAllBytes(twin + ".old"), oldBytes);
+                    if (errors[0] == null && errors[1] == null && targetOk && backupOk) continue;
+                    badRounds++;
+                    if (raceSamples.Length < 400)
+                    {
+                        string first = errors[0] ?? errors[1];
+                        raceSamples.Append("#").Append(round).Append(": ")
+                            .Append(first ?? (targetOk ? "backup corrupted" : "target corrupted")).Append("; ");
+                    }
+                }
+                Check(badRounds == 0, RaceRounds + " concurrent replace rounds produced " + badRounds
+                    + " bad rounds (" + raceSamples + ")");
+                Console.WriteLine("PASS: concurrent replaces serialize - one effective swap, "
+                    + "second flow no-op, backup intact (x" + RaceRounds + ")");
             }
         }
         finally
         {
             try { Directory.Delete(work, true); } catch { }
         }
+    }
+
+    // One barrier round: both waiters park on the gun, the gun releases them
+    // into ReplaceSequence at the same instant, and the per-slot errors come
+    // back after Join (slot i is written only by thread i, so no locking).
+    private static string[] RaceReplace(string target, string srcA, string srcB)
+    {
+        string[] errors = new string[2];
+        using (ManualResetEvent gun = new ManualResetEvent(false))
+        {
+            Thread a = new Thread(delegate()
+            {
+                gun.WaitOne();
+                try { Updater.ReplaceSequence(srcA, target); } catch (Exception ex) { errors[0] = ex.Message; }
+            });
+            Thread b = new Thread(delegate()
+            {
+                gun.WaitOne();
+                try { Updater.ReplaceSequence(srcB, target); } catch (Exception ex) { errors[1] = ex.Message; }
+            });
+            a.Start();
+            b.Start();
+            gun.Set();
+            a.Join();
+            b.Join();
+        }
+        return errors;
     }
 
     private static byte[] BuildPayload()
