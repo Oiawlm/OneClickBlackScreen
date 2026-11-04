@@ -4,14 +4,16 @@
 
 ## 1. 冷启动路由
 
-- 先读本轮（当前最大 V 号）`RESEARCH-V<n>.md` → `PLAN-V<n>.md` → 本窗口对应 `GOAL-V<n>?-PROMPT.md`；冲突时以 RESEARCH 为准。
-- 禁读历史轮 RESEARCH/PLAN/GOAL 全文（过程记录，防上下文膨胀）；要惯例只 grep 定位。
+- 三层渐进披露：先读 AGENTS.md（本文件，常驻）→ docs/README.md（任务路由枢纽）→
+  按路由表读当前批次 docs/handoff/<最新批次>/（RESEARCH→PLAN→本窗 GOAL）；冲突时以 RESEARCH 为准。
+- 禁读 docs/handoff/archive/ 历史批次全文（过程记录，防上下文膨胀）；要惯例只 grep 定位。
 
 ## 2. 独占资源（多窗口并发冲突的真实来源）
 
 - **验证套件是会话级独占**：`verify.cmd` 及单跑 GUI 验证器（VerifySettings/MouseExit/Overlay/Idle）注入全局键鼠、抢占前台——全局输入队列属于整个登录会话，**同一台机器同一时间至多一个窗口跑它们**。V7 起验证器内置闸门（`Local\BlackScreen.VerifyGate`）：撞闸输出 BUSY、退出码 2；正确应对＝等对方结束再跑，**不得绕过闸门、不得盲目重试风暴**。纯件 VerifyConfig/VerifyIcon/VerifyUpdate 无全局副作用。
 - **一个 checkout 同一时间只归一个窗口**：build/verify 写 `dist\` 与 `verify\bin\` 固定路径，共用必撞文件锁。未来并行轮必须各用独立 git worktree（V6B 事故教训：共享单工作树的分支切换会互相劫持检出）。
 - **真实用户状态只读**：`%LOCALAPPDATA%\BlackScreen\settings.ini` 与计划任务 `OneClickBlackScreen-Idle` 属于用户；验证一律走 TEMP/改名隔离，套件跑完用户状态字节级不变（零足迹）。
+- 并行轮一轨一 worktree（壳内 OneClickBlackScreen-WorkTree\，禁入仓库内），规程＝docs/multi-window.md。
 
 ## 3. 单一写者
 
@@ -21,7 +23,7 @@
 ## 4. 冻结区（任何窗口不得写）
 
 - `baseline/**`（v1 行为基准）；`migrate/**` 与 `SHA256SUMS.txt`（迁移归档，只读校验）。
-- 历史 RESEARCH/PLAN/GOAL 与 docs/ 既有证据文档（过程记录；I 轨发版辖内除外）。
+- `docs/handoff/archive/**`（V1~V7 历史轮次文档，归档只读）。
 - 版本号唯一手写来源＝`src/AppInfo.cs`，仅 I 轨可改。
 
 ## 5. 红线
