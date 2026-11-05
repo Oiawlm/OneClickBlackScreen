@@ -37,17 +37,25 @@
 
 ## 📦 下载与安装
 
-1. 打开 [Releases 页](https://github.com/Oiawlm/OneClickBlackScreen/releases)，下载最新版（当前 [v1.0.2](https://github.com/Oiawlm/OneClickBlackScreen/releases/tag/v1.0.2)）：
-   - `OneClickBlackScreen-v1.0.2.zip`（推荐，Release 页显示名「一键黑屏 v1.0.2 完整包」）：含主程序 exe、同名 `.exe.config`、`icon-settings.ico` 与使用说明，解压即用；
-   - `OneClickBlackScreen.exe`：裸单文件，适合最小化使用，也可被程序内更新器直连下载。
-2. （推荐）校验文件完整性——在 PowerShell 或 cmd 中运行：
+打开 [Releases 页](https://github.com/Oiawlm/OneClickBlackScreen/releases) 下载最新版（当前 [v1.0.2](https://github.com/Oiawlm/OneClickBlackScreen/releases/tag/v1.0.2)）：
 
-   ```
-   certutil -hashfile OneClickBlackScreen-v1.0.2.zip SHA256
-   ```
+| 下载 | 适合谁 | 用法 |
+|---|---|---|
+| `OneClickBlackScreen-Setup-1.0.2.exe`（推荐） | 想要双击安装、开始菜单快捷方式与可随时卸载的常规用户 | 双击运行安装向导；默认装到当前用户目录，无需管理员权限 |
+| `OneClickBlackScreen-v1.0.2.zip`（便携备选，Release 页显示名「一键黑屏 v1.0.2 完整包」） | 免安装、U 盘随取随用 | 解压到任意目录，双击 exe 即用 |
+| `OneClickBlackScreen.exe` | 只要最小体积的裸单文件；也会被程序内更新器直连下载 | 放置到任意目录 |
 
-   将输出的哈希与 Releases 页 `SHA256SUMS` 文件中对应行逐字比对，一致即通过。
-3. 解压（或放置 exe）到任意目录，双击即可使用；无需安装。首次使用若弹出 SmartScreen 提示，选「仍要运行」（见下方边界说明）。
+注：zip 便携包含主程序 exe、同名 `.exe.config`、`icon-settings.ico` 与使用说明；Setup 安装版内容相同，另带开始菜单「一键黑屏 / 一键黑屏-设置」两个快捷方式（桌面快捷方式默认不勾选）与系统卸载器。
+
+（推荐）校验文件完整性——在 PowerShell 或 cmd 中运行（以 Setup 为例，替换为你实际下载的文件名）：
+
+```
+certutil -hashfile OneClickBlackScreen-Setup-1.0.2.exe SHA256
+```
+
+将输出的哈希与 Releases 页 `SHA256SUMS` 文件中对应行逐字比对，一致即通过。
+
+Setup 版卸载：在 Windows「设置 > 应用 > 安装的应用」（或「添加/删除程序」）中卸载「一键黑屏」即可完整移除程序文件与快捷方式；若开启过空闲自动唤起会一并清理其计划任务，个人设置文件夹默认保留（见下方边界说明）。首次使用若弹出 SmartScreen 提示，选「仍要运行」。
 
 ## 🚀 使用
 
@@ -110,7 +118,7 @@ verify.cmd
 
 - `build.cmd`：用 `C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe` 直编 `src\`，产物输出到 `dist\`（csc 为 Windows 自带，无需安装任何 SDK）。
 - `verify.cmd`：编译并运行七件套验证器（VerifyConfig / VerifySettings / VerifyMouseExit / VerifyOverlay / VerifyIcon / VerifyUpdate / VerifyIdle；会短暂闪现遮罩，属预期行为）。验证会注入全局键鼠——运行期间请勿操作键盘鼠标，多个验证不可并行（套件内置闸门，撞闸 BUSY）。
-- `install.ps1`：幂等同步桌面快捷方式（双击遮罩 + 设置两个入口）。
+- `build-setup.cmd`：调用 Inno Setup（ISCC，自动探测 PATH 与 Inno Setup 6/7 标准目录）把 dist 三件套与使用说明打成 per-user 安装包 `dist\OneClickBlackScreen-Setup-<版本>.exe`；安装脚本在 `setup\OneClickBlackScreen.iss`，版本号取自 `src\AppInfo.cs` 单源。
 - `tools\MakeIcon.cs`：图标生成器（显式重新生成，构建只消费产物）。
 
 ## 📖 开发过程文档
@@ -119,8 +127,8 @@ verify.cmd
 
 | 文档 | 内容 |
 |---|---|
-| [docs/handoff/archive/](docs/handoff/archive/) | V1~V7 全部 45 份历史轮次文档原样归档（RESEARCH/PLAN/GOAL/VERIFY/REVIEW 等，只读） |
-| [docs/handoff/2026-11-05-v8-structure/](docs/handoff/2026-11-05-v8-structure/) | 当前批次（v8 轮）：本轮 RESEARCH/PLAN/GOAL 与执行窗 VERIFY 证据 |
+| [docs/handoff/archive/](docs/handoff/archive/) | V1~V8 历史轮次文档原样归档（RESEARCH/PLAN/GOAL/VERIFY/REVIEW 等，只读；V8 批次整目录在 archive\2026-11-05-v8-structure\） |
+| [docs/handoff/2026-11-05-v9-installer/](docs/handoff/2026-11-05-v9-installer/) | 当前批次（v9 轮）：本轮 RESEARCH/PLAN/GOAL 与执行窗 VERIFY 证据 |
 | [docs/lessons.md](docs/lessons.md) | 坑库：跨轮踩坑汇总（现象→根因→正解→出处） |
 | [docs/multi-window.md](docs/multi-window.md) | 多窗口并行规程：worktree 创建/推送/清理模板与写权归属 |
 | [AGENTS.md](AGENTS.md) | 多窗口协作契约：独占资源、单一写者、冻结区与红线（各 AI 窗口自动注入） |
