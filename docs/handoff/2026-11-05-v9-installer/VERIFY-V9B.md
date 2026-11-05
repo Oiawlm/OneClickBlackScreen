@@ -105,13 +105,48 @@ UNINSTALL_EXIT=0
 - no-op 语义：`Registry.CurrentUser.OpenSubKey(…, true)` 返回 null（键不存在＝便携/未安装用户）→ 直接 return，全程 try/catch best-effort——**swap 已成功，ARP 元数据失败绝不回头报错**（VerifyUpdate 绿即此实证，见 §4）。
 - `using Microsoft.Win32;`（.NET FW 4.x 中 RegistryKey 在 mscorlib，无新增引用）；`build.cmd` 绿。
 
-## 4. P6 · 七件套验证
+## 4. P6 · 七件套验证——**全七件全绿（[OK] ALL VERIFIERS PASSED）**
 
-**本窗实录：纯件 3/3 全 PASS**（AGENTS §2：VerifyConfig/VerifyIcon/VerifyUpdate 无全局键鼠副作用；编译行与调用参数逐字取自 verify.cmd，经临时批处理在 worktree 执行）：
+执行通道说明（如实）：本窗代理侧执行 verify.cmd 连续七次被工具权限层拒绝（无弹窗、无输出，执行前即取消）；最终由用户以本窗备好的桌面脚本（ASCII＋CRLF，内容＝`cd /d <worktree>`＋`call verify.cmd`＋日志重定向）双击执行，日志落 `%TEMP%\v9b-verify2.log`，以下为逐字转录（同一 worktree、同一 dist 构建）：
 
 ```
 [1/7] VerifyConfig
 PASS: 23 config tests (defaults/roundtrip/format/golden/corruption/escapes/atomic-write/idle-key)
+[2/7] VerifySettings
+PASS: --settings opened exactly one closable non-mask window, exit code 0
+PASS: two --settings instances coexisted and both closed with exit code 0
+PASS: unknown argument showed usage dialog, zero mask windows, exit code 0
+PASS: settings background follows AppsUseLightTheme (light, expected #F5F5F5)
+PASS: Enter in the multiline box inserted a newline, raised no dialog, left the config untouched
+PASS: Enter on the dialog (focus outside the text box) saved the preset text via the confirmation path
+PASS: geometry mirrored SettingsDialogMetrics (+-1px), text box font locked the body tier, window inside working area, primary button locked Accent
+PASS Z: user's real settings.ini untouched (SHA-256 before == after)
+PASS TOTAL: 6 settings checks (3 original + theme background + Enter contract + geometry mirror)
+[3/7] VerifyMouseExit
+PASS: Left: 6 moves and 2 wheel messages kept open; down kept open; up exited
+PASS: Right: 6 moves and 2 wheel messages kept open; down kept open; up exited
+PASS: Middle: 6 moves and 2 wheel messages kept open; down kept open; up exited
+PASS: X1: 6 moves and 2 wheel messages kept open; down kept open; up exited
+PASS: X2: 6 moves and 2 wheel messages kept open; down kept open; up exited
+PASS: Left click under phantom held key exited
+PASS TOTAL: 5/5 buttons; 30 movement messages; 10 wheel messages; 1 windows per launch; phantom-key click exit OK
+[4/7] VerifyOverlay
+PASS A: no config = pure black v1 behavior, 1 windows, exact bounds, topmost, borderless
+PASS B: configured color + text rendered, auto-contrast text pixels found
+PASS C: color-only config = solid mask on every screen
+PASS D: key 0x87 foreground exit, code 0
+PASS D: key 0x87 background exit, code 0
+PASS D: key 0x1B foreground exit, code 0
+PASS D: key 0x1B background exit, code 0
+PASS D: key 0x10 foreground exit, code 0
+PASS D: key 0x10 background exit, code 0
+PASS D: key 0x12 foreground exit, code 0
+PASS E: held key blocked arming, unarmed key ignored, exit after release
+PASS F: second instance self-exited silently, first stayed alive
+PASS G: held launch key auto-repeat passed through; exit after release
+PASS H: phantom held key did not block arming; SPACE exited
+PASS Z: user's real settings.ini untouched (SHA-256 before == after)
+PASS TOTAL: A-H; 1 displays; max InputIdle 102 ms (limit 2000)
 [5/7] VerifyIcon
 PASS: icon-main.ico structure ok (7 tiers, in-bounds, all entries decodable)
 PASS: icon-settings.ico structure ok (7 tiers, in-bounds, all entries decodable)
@@ -131,12 +166,17 @@ PASS: equal and malformed tags read as no update
 PASS: replace sequence (stale .old cleared, rollback restored, blocked pre-clean)
 PASS: concurrent replaces serialize - one effective swap, second flow no-op, backup intact (x50)
 PASS TOTAL: update checks (version table + offline full chain)
-[OK] PURE 3/3 PASSED (Config/Icon/Update)
+[7/7] VerifyIdle
+PASS 1: task xml carries the C3 field set, quotes the exe, writes UTF-16 BOM
+PASS 2: Ensure -> query exit 0 -> Remove -> query exit 1 (task cleaned up)
+PASS 3: active-session --idle exited within 2 s, exit code 0, zero windows
+PASS 4: ShouldShow decision table (8 cases, threshold edges included)
+PASS 5: live IdleMilliseconds() = 63 ms (0 <= reading < 60000)
+PASS TOTAL: 5 idle checks (xml fields / scheduler loop / silent exit / decision table / live reading)
+[OK] ALL VERIFIERS PASSED
 ```
 
-**VerifyUpdate exit 0 ＝ 验收第 7 条 no-op 实证**：改后的 Updater.cs（含 ARP 联动）完整过「下载→校验→替换→回滚→并发序列化」链；本机真实 AppId 键 ABSENT（§2 快照）→ SyncUninstallVersion 全程早退零写入。
-
-**【缺口·如实声明】GUI 四件（VerifySettings/VerifyMouseExit/VerifyOverlay/VerifyIdle）本窗未跑**：五次执行尝试（含用户两次明确答复「跑吧」后的最简形态）均在工具权限层被拦。此四件注入全局键鼠＝闸门独占资源，留待用户手跑或 R/I 轨复跑补档（worktree dist 已就绪，`cd /d "D:\Download\Agent Vault\OneClickBlackScreen\OneClickBlackScreen-WorkTree\v9-b" && verify.cmd` 一条即全七件；期间勿碰键鼠）。`build.cmd` 全绿为全部七件的前置编译证据。
+**VerifyUpdate 全 PASS ＝ 验收第 7 条 no-op 实证**：改后的 Updater.cs（含 ARP 联动）完整过「下载→校验→替换→回滚→并发序列化×50」链；本机真实 AppId 键 ABSENT（§2 快照）→ SyncUninstallVersion 全程早退零写入。另：本窗在代理通道被拦期间曾以 verify.cmd 原生编译行单跑纯件三件（Config/Icon/Update）亦全 PASS（与上录 [1][5][6] 一致），作为旁证留档。
 
 ## 5. P4 · 分发面文档改写
 
@@ -170,7 +210,7 @@ PASS TOTAL: update checks (version table + offline full chain)
 
 ## 8. 移交注记（供 R 复检/I 真机冒烟重点核）
 
-1. **GUI 四件缺口**（§4）：纯件 3/3 本窗已全绿（Config/Icon/Update，VerifyUpdate exit 0＝ARP no-op 实证）；VerifySettings/MouseExit/Overlay/Idle 因工具权限层五次拦截未在本窗跑——R/I 必须补跑四件全绿后才可合入发版。
+1. **七件套已全绿**（§4，用户经桌面脚本通道执行、日志逐字转录）；代理侧执行通道被工具权限层七拦（无弹窗、执行前取消）的过程与绕行方式已如实留档，R 轨按其自身判据复跑即可（常规复核，非缺口）。
 2. **IS7 vs 规划的 IS6**：用户实装 Inno Setup 7.1.1（非 PLAN §5 预期的 6）；`WizardStyle=modern`/消息键名均按 IS7 核对，R 复检时以 IS7 语义为准。
 3. **`/NOICONS` 无效结论**（§2）：GOAL P5 原文假定 `/VERYSILENT /NOICONS` 可静默免图标——实测＋官方文档均否定；隔离机制已根修为预处理层裁剪。I 轨真机冒烟请核**真实安装**的快捷方式三处（开始菜单×2、桌面默认不勾）与卸载自清。
 4. **README 开发过程文档表两行修正超出 P4 字面范围**：死链修复＋archive 行数更新（V1~V8）——依据＝R 轨死链复扫门槛与本轨对 README 的独占写面；请 R 确认此越字面但合目的的改法。
