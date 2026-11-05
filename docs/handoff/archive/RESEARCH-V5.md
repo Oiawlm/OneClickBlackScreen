@@ -119,11 +119,11 @@
 ### D 系 · 迁移与清理
 | # | 决策 |
 |---|---|
-| D1 | 迁移就绪硬化（根治非补丁）：install.ps1 去除 `C:\Users\Lenovo` 硬编码→`$env:USERPROFILE\DeskBox\DeskBox` 派生（PC2 用户名不同即需要）；build.cmd/verify.cmd 的 csc 存在性 FAIL 提示保持既有口径 |
+| D1 | 迁移就绪硬化（根治非补丁）：install.ps1 去除 `C:\Users\Lenovo` 硬编码→由 `$env:USERPROFILE` 派生（PC2 用户名不同即需要）；build.cmd/verify.cmd 的 csc 存在性 FAIL 提示保持既有口径 |
 | D2 | 迁移主路径（PC2 在线）：`winget install --id Git.Git -e` →（可选 gh）→ `git clone https://github.com/Oiawlm/OneClickBlackScreen` → `git config core.quotepath false` → `build.cmd` → `verify.cmd` 全绿 → `install.ps1` → 双击遮罩冒烟；ZCode：官网安装＋登录＋skills 三件套（fts-style-system/glm-prompt-crafter/github-readme，wb-bridge 可选）从迁移包复制到 `%USERPROFILE%\.zcode\skills\`；`settings.ini` 按需复制（个性化） |
 | D3 | 离线备援包：`git bundle create 一键黑屏.bundle --all`（含未推送分支，R3/A5 的保全）＋仓库工作区 zip＋skills zip＋手册自身；PC2 无网时 `git clone 一键黑屏.bundle` 全量还原 |
 | D4 | 手册（`migrate/迁移手册.md`＋图表）：总流程图＋每步小图；每步含「在哪打开 PowerShell（开始菜单搜 / Win+X）」＋逐条可复制粘贴命令＋预期输出样例＋失败排查表；菜鸟零跳步口径（术语首次出现即解释）；图表用 mermaid 内嵌＋导出 PNG |
-| D5 | 清理脚本 `migrate/cleanup-local.ps1`（D 生成、**用户手动执行、任何窗口不得代跑**）：`-ConfirmPC2Verified` 开关（缺省拒绝运行并列出 PC2 验证清单）；执行序＝打包留档（仓库 zip→桌面＋SHA256）→删：仓库目录、DeskBox 两 .lnk（存在才删）、`%LOCALAPPDATA%\BlackScreen`、计划任务 `OneClickBlackScreen-Idle`（存在才删）、ZCode 本工作区痕迹（可定位部分）；**保留**：`~/.zcode/skills`（用户级、非项目专属，登记待用户确认）；每步输出结果清单 |
+| D5 | 清理脚本 `migrate/cleanup-local.ps1`（D 生成、**用户手动执行、任何窗口不得代跑**）：`-ConfirmPC2Verified` 开关（缺省拒绝运行并列出 PC2 验证清单）；执行序＝打包留档（仓库 zip→桌面＋SHA256）→删：仓库目录、两个快捷方式 .lnk（存在才删）、`%LOCALAPPDATA%\BlackScreen`、计划任务 `OneClickBlackScreen-Idle`（存在才删）、ZCode 本工作区痕迹（可定位部分）；**保留**：`~/.zcode/skills`（用户级、非项目专属，登记待用户确认）；每步输出结果清单 |
 | D6 | PC2 验证口径（迁移完成的判定）：`git fsck` 无错＋`git status` 干净＋`verify.cmd` 全绿＋双击遮罩冒烟＋设置窗打开冒烟；证据留档（截图），作为跑 cleanup 的前置 |
 
 ## 6. 验证面演进

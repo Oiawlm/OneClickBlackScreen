@@ -21,12 +21,12 @@
 
 ## 2. 背景
 
-项目即将迁往第二台 Windows 电脑（U4＝完整开发环境），原机随后清理（U6）。R4 已证：csc 与 PowerShell 5.1 为 Windows 自带、Win10 1903+/Win11 出厂含 .NET FW 4.8——PC2 只需装 git（winget 一条命令）即可 clone＋build＋verify。主路径＝GitHub clone；离线备援＝git bundle（含未推送的本地分支）。本机硬编码 `C:\Users\Lenovo\...` 在 install.ps1（DeskBox 路径），PC2 用户名不同即失效——先根治再打包。
+项目即将迁往第二台 Windows 电脑（U4＝完整开发环境），原机随后清理（U6）。R4 已证：csc 与 PowerShell 5.1 为 Windows 自带、Win10 1903+/Win11 出厂含 .NET FW 4.8——PC2 只需装 git（winget 一条命令）即可 clone＋build＋verify。主路径＝GitHub clone；离线备援＝git bundle（含未推送的本地分支）。本机硬编码 `C:\Users\Lenovo\...` 在 install.ps1（快捷方式目标路径），PC2 用户名不同即失效——先根治再打包。
 
 ## 3. Phase 任务
 
 ### Phase 1 · 迁移就绪硬化（D1）
-- `install.ps1`：DeskBox 路径改 `$env:USERPROFILE\DeskBox\DeskBox` 派生（去两处硬编码；回读校验逻辑不变）；顶部加一行注释说明可改的目标目录变量。本机实跑一次幂等验证（DeskBox 快捷方式重建成功）。
+- `install.ps1`：快捷方式目标路径改由 `$env:USERPROFILE` 派生（去两处硬编码；回读校验逻辑不变）；顶部加一行注释说明可改的目标目录变量。本机实跑一次幂等验证（快捷方式重建成功）。
 - `git status` 确认硬化后 `verify.cmd` 仍全绿（脚本不影响构建，但按惯例守门）。
 
 ### Phase 2 · 迁移包（D3）
@@ -51,7 +51,7 @@
 ### Phase 4 · 本地清理脚本（D5）
 - 新建 `migrate/cleanup-local.ps1`：参数 `-ConfirmPC2Verified`（**缺省即拒绝运行**并打印 D6 清单提示）；执行序：
   1. 打包留档：仓库 zip→桌面（`一键黑屏-最终留档-日期.zip`）＋SHA256 打印（用户日后自行处置）
-  2. 删除：仓库目录（脚本所在仓库自身——用「标记后自删」或先复制脚本到桌面再执行，写清操作序）；DeskBox 两个 .lnk（存在才删）；`%LOCALAPPDATA%\BlackScreen`；计划任务 `OneClickBlackScreen-Idle`（`schtasks /delete /tn ... /f`，退出码 1＝本就不存在＝放行）；ZCode 本工作区痕迹（只**列出**可定位项供界面内手动移除，不盲删）
+  2. 删除：仓库目录（脚本所在仓库自身——用「标记后自删」或先复制脚本到桌面再执行，写清操作序）；两个 .lnk（存在才删）；`%LOCALAPPDATA%\BlackScreen`；计划任务 `OneClickBlackScreen-Idle`（`schtasks /delete /tn ... /f`，退出码 1＝本就不存在＝放行）；ZCode 本工作区痕迹（只**列出**可定位项供界面内手动移除，不盲删）
   3. **保留**：`%USERPROFILE%\.zcode\skills`（用户级、非项目专属——输出一句说明，最终去留由用户定）
   4. 每步打印结果清单；任何一步失败→停在后置步骤前，报告已完成/未完成。
 - 脚本头部注释＝红线声明：只应由用户在 PC2 验证通过后手动执行；任何 AI 窗口不得代跑。

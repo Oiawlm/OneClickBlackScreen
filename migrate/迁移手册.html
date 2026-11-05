@@ -314,13 +314,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1
 [OK] 一键黑屏-设置.lnk  -&gt;  ...\dist\一键黑屏.exe --settings  Icon=&#39;...\icon-settings.ico,0&#39;
 [OK] install.ps1 完成（幂等，可重复运行；旧 exe 与其他文件未触碰）
 </code></pre>
-<p><strong>完成标志</strong>：<code>DeskBox\DeskBox</code> 文件夹（在 <code>C:\Users\你的用户名\DeskBox\DeskBox</code>）里出现两个快捷方式。</p>
+<p><strong>完成标志</strong>：快捷方式目标文件夹里出现两个快捷方式。</p>
 <h3>步骤 5.4 · 双击冒烟</h3>
 <ol>
 <li>进 <code>OneClickBlackScreen\dist</code> 文件夹，双击 <code>一键黑屏.exe</code>。</li>
 <li><strong>预期</strong>：屏幕立刻变成全屏遮罩（设置过颜色就是你的颜色）。</li>
 <li><strong>按键盘任意一个键</strong>，遮罩消失。</li>
-<li>再双击 <code>一键黑屏-设置</code> 快捷方式（DeskBox 里），<strong>预期</strong>：设置窗口打开；随便改一项→点保存→提示成功。</li>
+<li>再双击 <code>一键黑屏-设置</code> 快捷方式，<strong>预期</strong>：设置窗口打开；随便改一项→点保存→提示成功。</li>
 </ol>
 <p><strong>完成标志</strong>：遮罩能出能关、设置窗能开能存。</p>
 <h3>步骤 5.5 ·（可选）把个性化设置带过来</h3>
@@ -473,7 +473,7 @@ git status
 <pre><code>powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$env:USERPROFILE\Desktop\cleanup-local.ps1&quot; -ConfirmPC2Verified
 </code></pre>
 <p><strong>预期输出</strong>：S1 生成 <code>一键黑屏-最终留档-日期.zip</code> 并打印 SHA256 → S2～S5 逐条 <code>[OK]</code>／<code>[SKIP]</code> → 最后 <code>[DONE] 清理完成。桌面留档 zip 由你自行处置…</code>。</p>
-<p><strong>完成标志</strong>：桌面上多出留档 zip；项目文件夹、DeskBox 两个快捷方式、<code>%LOCALAPPDATA%\BlackScreen</code> 都已消失；脚本会同时告诉你 ZCode 痕迹清单和 skills 保留说明。</p>
+<p><strong>完成标志</strong>：桌面上多出留档 zip；项目文件夹、<code>%LOCALAPPDATA%\BlackScreen</code> 都已消失；脚本会同时告诉你 ZCode 痕迹清单和 skills 保留说明。</p>
 <blockquote>
 <p>忘了带 <code>-ConfirmPC2Verified</code> 会怎样？脚本直接拒绝并打印五项清单提示（这是设计好的保险丝，不是坏了）：
 <code>[REFUSED] 未带 -ConfirmPC2Verified 参数，本脚本拒绝运行，未触碰任何文件。</code></p>

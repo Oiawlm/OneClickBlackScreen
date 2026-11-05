@@ -42,7 +42,7 @@
 - 编译器：仅 `C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe`（**C# 5 方言上限**）；无 .NET SDK、无 Roslyn。
 - 运行时：.NET Framework 4.8.x（NDP v4 Full Release=0x82718）。
 - 显示器：**混合 DPI 双屏**——DISPLAY1 主屏 2560×1600@150%（逻辑 1707×1067），DISPLAY2 副屏 1920×1080@125%（逻辑 1536×864，位于负坐标）。VirtualScreen `{X=-1536,Y=0,W=3243,H=1078}` 含屏间空隙。
-- 快捷方式：`C:\Users\Lenovo\DeskBox\DeskBox\一键黑屏.lnk` → `C:\Users\Lenovo\Documents\Codex\2026-09-07\gei\outputs\一键黑屏.exe`（旧产物，保留不动作回退）。
+- 快捷方式：用户快捷方式启动目录的 `一键黑屏.lnk` → `C:\Users\Lenovo\Documents\Codex\2026-09-07\gei\outputs\一键黑屏.exe`（旧产物，保留不动作回退）。
 
 ## 4. 外部调研结论（wbx 双 lane，交叉验证）
 
@@ -68,8 +68,8 @@
 | D8 | 单实例 | 仅遮罩模式：`Local\` 命名互斥体，`WaitOne(0)`，占用即静默退出；`AbandonedMutexException` 视为取得；仅在拥有时 Release，`Application.Run` 返回后 finally 兜底；设置模式不受限 |
 | D9 | 配置快照语义 | 遮罩启动时读一次配置传构造函数；设置保存**下次启动生效**；明确不做文件监听/IPC/实时刷新 |
 | D10 | 生命周期 | 分流 → （遮罩模式）互斥体 → 同步读配置（带上限）→ 建窗；`SetCompatibleTextRenderingDefault` 在两模式任何窗体前调用；Main 同步读可接受，不承诺亚毫秒 |
-| D11 | 构建与安装 | `build.cmd` 一键调 csc（`-target:winexe -optimize+ -win32manifest:baseline\BlackScreen.manifest`，引用仅 System/System.Drawing/System.Windows.Forms 等框架程序集，**零第三方依赖**）；`install.ps1` 幂等同步 DeskBox 双快捷方式（主=无参、设置=`--settings`），目标=仓库 `dist\一键黑屏.exe`；**源码文件必须 UTF-8 带 BOM**（csc 无 BOM 按 GBK 读，中文字面量会乱码） |
-| D12 | 冻结清单 | baseline/ 不改；退出交互与 arm 精确语义（§2）逐字保留；不引入托盘/常驻/热键/半透明/NOACTIVATE/多语言；旧 exe 与 DeskBox 其他文件不动；不改系统设置、不联网 |
+| D11 | 构建与安装 | `build.cmd` 一键调 csc（`-target:winexe -optimize+ -win32manifest:baseline\BlackScreen.manifest`，引用仅 System/System.Drawing/System.Windows.Forms 等框架程序集，**零第三方依赖**）；`install.ps1` 幂等同步双快捷方式（主=无参、设置=`--settings`），目标=仓库 `dist\一键黑屏.exe`；**源码文件必须 UTF-8 带 BOM**（csc 无 BOM 按 GBK 读，中文字面量会乱码） |
+| D12 | 冻结清单 | baseline/ 不改；退出交互与 arm 精确语义（§2）逐字保留；不引入托盘/常驻/热键/半透明/NOACTIVATE/多语言；旧 exe 与快捷方式目录其他文件不动；不改系统设置、不联网 |
 
 ## 6. 验证方案（延续 baseline 验证文化，全部自动化）
 
