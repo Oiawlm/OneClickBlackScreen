@@ -109,7 +109,7 @@ PASS TOTAL: 4 icon checks
 - `build.cmd` → 退出码 0；`dist\一键黑屏.exe`（243200 字节，内嵌双图标故较 v1 的 20992 字节增大）+ `dist\一键黑屏.exe.config`（245 字节）+ `dist\icon-settings.ico`（110145 字节）三件非空。
 - `verify.cmd` → 退出码 0，五件套全 PASS（30 条 PASS 行）：VerifyConfig 18 项 / VerifySettings 4 项（3 原 + 主题背景）/ VerifyMouseExit 5 键 / VerifyOverlay A–F（Overlay B 在 YaHei UI 字体链下原样通过 = U1 回归门）/ VerifyIcon 4 查。
 - InputIdle 实测最大 **116 ms**（限值 2000 ms；多轮观测 178/129/116 ms——字体链静态解析未拖慢热路径）。
-- `install.ps1` 连跑两次均退出码 0（幂等）：主 .lnk 无自定义图标（回读归一化 `',0'`==空）；设置 .lnk `IconLocation` 回读==`D:\Download\Agent Vault\一键黑屏\dist\icon-settings.ico,0`；DeskBox 目录 13 项（2 个本程序 .lnk + 11 个未触碰）。
+- `install.ps1` 连跑两次均退出码 0（幂等）：主 .lnk 无自定义图标（回读归一化 `',0'`==空）；设置 .lnk `IconLocation` 回读==`D:\Download\Agent Vault\一键黑屏\dist\icon-settings.ico,0`；快捷方式目录 13 项（2 个本程序 .lnk + 11 个未触碰）。
 - 冻结项核查：`git diff main -- baseline/` 为空；`git diff main --stat -- src/Program.cs src/MaskConfig.cs src/OverlayForm.cs` 为空；v1 四件套断言零改动（VerifyConfig/MouseExit/Overlay 仅 BOM 前置，VerifySettings 仅 BOM + 总计行 3→4 查，原 Check 断言逐字保留）；设置窗控件集合与保存语义不变。
 - 源码纪律：src/、tools/、verify/ 全部 .cs UTF-8 带 BOM（baseline/ 冻结不改）；build.rsp 引用仅 System/System.Drawing/System.Windows.Forms；C#5 编译通过即证方言兼容。
 - 分支：`feature/frontend-v2`，6 提交（勘察评审/图标/源码/构建验证/BOM 规范/安装文档），工作树干净；不自行 merge main（合并指令：`git checkout main && git merge feature/frontend-v2`，由用户确认后执行）。

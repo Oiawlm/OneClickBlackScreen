@@ -15,12 +15,11 @@
 # 【它做什么（按顺序）】
 #   S1 打包留档：整个仓库压成 zip 放到桌面（一键黑屏-最终留档-日期.zip）并打印 SHA256，
 #      供你日后自行处置（留存/上传网盘/删除均可）。S1 失败则绝不删除仓库。
-#   S2 删除 DeskBox 两个快捷方式（一键黑屏.lnk / 一键黑屏-设置.lnk，不存在则跳过）。
-#   S3 删除配置目录 %LOCALAPPDATA%\BlackScreen（不存在则跳过）。
-#   S4 删除计划任务 OneClickBlackScreen-Idle（本就不存在也视为成功）。
-#   S5 删除仓库目录（只有 S1 留档成功才会执行）。
-#   S6 列出 ZCode 本工作区痕迹（只列出不删除，按清单在 ZCode 界面内手动移除）。
-#   S7 声明保留 %USERPROFILE%\.zcode\skills（用户级、非本项目专属，去留由你定）。
+#   S2 删除配置目录 %LOCALAPPDATA%\BlackScreen（不存在则跳过）。
+#   S3 删除计划任务 OneClickBlackScreen-Idle（本就不存在也视为成功）。
+#   S4 删除仓库目录（只有 S1 留档成功才会执行）。
+#   S5 列出 ZCode 本工作区痕迹（只列出不删除，按清单在 ZCode 界面内手动移除）。
+#   S6 声明保留 %USERPROFILE%\.zcode\skills（用户级、非本项目专属，去留由你定）。
 #   任何一步失败→停在后置步骤前，打印已完成/未完成清单。
 # =============================================================================
 param(
@@ -93,79 +92,63 @@ try {
     $s1ok = $false
 }
 
-# ---------- S2 DeskBox 两个快捷方式 ----------
-$lnkDir = Join-Path $env:USERPROFILE 'DeskBox\DeskBox'
-foreach ($name in @('一键黑屏.lnk', '一键黑屏-设置.lnk')) {
-    $lnk = Join-Path $lnkDir $name
-    try {
-        if ($DryRun) {
-            Record 'S2' '[DRY]' "$(if (Test-Path $lnk) { "将删除 $lnk" } else { "不存在，跳过 $name" })"
-        } elseif (Test-Path $lnk) {
-            Remove-Item $lnk -Force
-            Record 'S2' '[OK]' "已删除 $lnk"
-        } else {
-            Record 'S2' '[SKIP]' "本就不存在：$name"
-        }
-    } catch { Record 'S2' '[FAIL]' $_.Exception.Message; $s1ok = $false }
-}
-
-# ---------- S3 %LOCALAPPDATA%\BlackScreen ----------
+# ---------- S2 %LOCALAPPDATA%\BlackScreen ----------
 $cfgDir = Join-Path $env:LOCALAPPDATA 'BlackScreen'
 try {
     if ($DryRun) {
-        Record 'S3' '[DRY]' "$(if (Test-Path $cfgDir) { "将删除配置目录 $cfgDir" } else { '不存在，跳过' })"
+        Record 'S2' '[DRY]' "$(if (Test-Path $cfgDir) { "将删除配置目录 $cfgDir" } else { '不存在，跳过' })"
     } elseif (Test-Path $cfgDir) {
         Remove-Item $cfgDir -Recurse -Force
-        Record 'S3' '[OK]' "已删除 $cfgDir"
+        Record 'S2' '[OK]' "已删除 $cfgDir"
     } else {
-        Record 'S3' '[SKIP]' "本就不存在：$cfgDir"
+        Record 'S2' '[SKIP]' "本就不存在：$cfgDir"
     }
-} catch { Record 'S3' '[FAIL]' $_.Exception.Message }
+} catch { Record 'S2' '[FAIL]' $_.Exception.Message }
 
-# ---------- S4 计划任务 ----------
+# ---------- S3 计划任务 ----------
 try {
     if ($DryRun) {
-        Record 'S4' '[DRY]' '将执行 schtasks /delete /tn OneClickBlackScreen-Idle /f（本就不存在则跳过）'
+        Record 'S3' '[DRY]' '将执行 schtasks /delete /tn OneClickBlackScreen-Idle /f（本就不存在则跳过）'
     } else {
         schtasks.exe /delete /tn 'OneClickBlackScreen-Idle' /f *> $null
         if ($LASTEXITCODE -eq 0) {
-            Record 'S4' '[OK]' '已删除计划任务 OneClickBlackScreen-Idle'
+            Record 'S3' '[OK]' '已删除计划任务 OneClickBlackScreen-Idle'
         } elseif ($LASTEXITCODE -eq 1) {
-            Record 'S4' '[SKIP]' '计划任务本就不存在（退出码 1＝放行）'
+            Record 'S3' '[SKIP]' '计划任务本就不存在（退出码 1＝放行）'
         } else {
-            Record 'S4' '[FAIL]' "schtasks 退出码 $LASTEXITCODE"
+            Record 'S3' '[FAIL]' "schtasks 退出码 $LASTEXITCODE"
         }
+    }
+} catch { Record 'S3' '[FAIL]' $_.Exception.Message }
+
+# ---------- S4 删除仓库目录 ----------
+try {
+    if (-not $s1ok) {
+        Record 'S4' '[SKIP]' 'S1 留档未成功，按铁则跳过仓库删除（旧文件一件不删）'
+    } elseif ($DryRun) {
+        Record 'S4' '[DRY]' "将删除整个仓库目录 $RepoPath"
+    } else {
+        Remove-Item $RepoPath -Recurse -Force
+        Record 'S4' '[OK]' "已删除 $RepoPath"
     }
 } catch { Record 'S4' '[FAIL]' $_.Exception.Message }
 
-# ---------- S5 删除仓库目录 ----------
-try {
-    if (-not $s1ok) {
-        Record 'S5' '[SKIP]' 'S1 留档未成功，按铁则跳过仓库删除（旧文件一件不删）'
-    } elseif ($DryRun) {
-        Record 'S5' '[DRY]' "将删除整个仓库目录 $RepoPath"
-    } else {
-        Remove-Item $RepoPath -Recurse -Force
-        Record 'S5' '[OK]' "已删除 $RepoPath"
-    }
-} catch { Record 'S5' '[FAIL]' $_.Exception.Message }
-
-# ---------- S6 ZCode 工作区痕迹（只列不删） ----------
-Record 'S6' '[LIST]' 'ZCode 本工作区可定位痕迹（请到 ZCode 界面内手动移除，本脚本不盲删）：'
+# ---------- S5 ZCode 工作区痕迹（只列不删） ----------
+Record 'S5' '[LIST]' 'ZCode 本工作区可定位痕迹（请到 ZCode 界面内手动移除，本脚本不盲删）：'
 $zcodeRoot = 'D:\Download\ZCodeData\.zcode\v2'
 foreach ($p in @(
     (Join-Path $zcodeRoot 'tasks-index.sqlite'),
     (Join-Path $zcodeRoot 'visualizations'),
     (Join-Path $zcodeRoot 'checkpoints')
 )) {
-    if (Test-Path $p) { Record 'S6' '[LIST]' "  存在：$p" }
+    if (Test-Path $p) { Record 'S5' '[LIST]' "  存在：$p" }
 }
-Record 'S6' '[LIST]' '  提示：tasks-index.sqlite 是所有工作区共用的任务索引（删库会影响其他工作区，'
-Record 'S6' '[LIST]' '        建议只在 ZCode 应用的会话/任务列表里删除本项目相关条目，不动文件本身。'
+Record 'S5' '[LIST]' '  提示：tasks-index.sqlite 是所有工作区共用的任务索引（删库会影响其他工作区，'
+Record 'S5' '[LIST]' '        建议只在 ZCode 应用的会话/任务列表里删除本项目相关条目，不动文件本身。'
 
-# ---------- S7 保留声明 ----------
-Record 'S7' '[KEEP]' "$env:USERPROFILE\.zcode\skills 已保留：这是用户级技能库、非本项目专属，"
-Record 'S7' '[KEEP]' '        其他项目仍在用；最终去留由你自行决定（删除不影响一键黑屏）。'
+# ---------- S6 保留声明 ----------
+Record 'S6' '[KEEP]' "$env:USERPROFILE\.zcode\skills 已保留：这是用户级技能库、非本项目专属，"
+Record 'S6' '[KEEP]' '        其他项目仍在用；最终去留由你自行决定（删除不影响一键黑屏）。'
 
 # ---------- 汇总 ----------
 Write-Host ''

@@ -62,7 +62,7 @@
 - 产出：build.cmd + verify 套件 + docs/VERIFY-V1.md + git 提交。
 
 ### Phase 4 · 安装与文档
-- `install.ps1`：幂等同步 DeskBox 双快捷方式——`C:\Users\Lenovo\DeskBox\DeskBox\一键黑屏.lnk`（无参，目标=仓库 `dist\一键黑屏.exe`）与 `一键黑屏-设置.lnk`（同目标，参数 `--settings`）；用 WScript.Shell COM；不触碰该目录其他文件，不删旧 exe（`Documents\Codex\...` 处保留作回退）。
+- `install.ps1`：幂等同步双快捷方式——`一键黑屏.lnk`（无参，目标=仓库 `dist\一键黑屏.exe`）与 `一键黑屏-设置.lnk`（同目标，参数 `--settings`）；用 WScript.Shell COM；不触碰快捷方式目录其他文件，不删旧 exe（`Documents\Codex\...` 处保留作回退）。
 - 仓库根写 v2 版 `使用说明.txt`：双快捷方式用法、设置入口、颜色/文字自定义、配置文件位置、**"保存后下次启动生效"**、退出行为与 v1 完全一致、§7 风险边界。
 - 更新 `README.md` 文档地图（src/verify/docs/dist 行）。
 - 产出：install.ps1 + 使用说明.txt + README 更新 + git 提交。
@@ -74,8 +74,8 @@
 - 产出：全绿证据 + 干净的 git 状态。
 
 ### 边界清单
-- 允许：仓库内一切新增/修改；DeskBox 目录仅两个指名 .lnk；%LOCALAPPDATA%\BlackScreen\ 配置读写；运行验证器。
-- 禁止：改 baseline/；改 DeskBox 其他文件；删除旧 exe；改系统设置/注册表；联网下载依赖；把任何凭证写进文件或提示词。
+- 允许：仓库内一切新增/修改；快捷方式目录仅两个指名 .lnk；%LOCALAPPDATA%\BlackScreen\ 配置读写；运行验证器。
+- 禁止：改 baseline/；改快捷方式目录其他文件；删除旧 exe；改系统设置/注册表；联网下载依赖；把任何凭证写进文件或提示词。
 
 ## 5. 铁律（不可协商）
 
@@ -89,7 +89,6 @@
 
 - 配置路径：`%LOCALAPPDATA%\BlackScreen\settings.ini`（`color=#RRGGBB` + `text=...`，转义规则见 RESEARCH-V1 §5-D3）。
 - 编译器：`C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe`。
-- 快捷方式目录：`C:\Users\Lenovo\DeskBox\DeskBox\`。
 - 仓库根：`D:\Download\Agent Vault\一键黑屏`。
 
 ## 7. 验收清单（Done when——校验器只认这些实据）
@@ -100,7 +99,7 @@
 | 2 | `verify` 全部验证器输出含 PASS 且退出码 0：逐屏窗体数==屏数、逐屏边界精确、TopMost、无边框、每屏采样点==配置色、有文字时中心区含文字色像素、无文字时全屏纯色、3 键前台+后台退出、退出码 0、第二实例自退、InputIdle ≤2000ms（报告实测值） |
 | 3 | `VerifyConfig` 退出码 0（roundtrip/缺文件/损坏/超限/未知键回落默认/转义） |
 | 4 | `--settings` 打开设置窗（恰好一个非遮罩窗体，进程存活可被关闭）；未知参数不产生任何遮罩窗体 |
-| 5 | `install.ps1` 连跑两次成功；DeskBox 目录两个指名 .lnk 存在且目标/参数正确 |
+| 5 | `install.ps1` 连跑两次成功；快捷方式目录两个指名 .lnk 存在且目标/参数正确 |
 | 6 | git：`feature/mask-customization` 分支，工作树干净，≥4 个提交（勘察勘误/T7 评审、实现、构建+验证、安装+文档） |
 | 7 | 文档：RESEARCH-V1.md 含 §9 T7 评审记录；docs/VERIFY-V1.md 含全部命令与输出摘要；使用说明.txt 为 v2 版 |
 | 8 | 冻结项核查：`git diff main -- baseline/` 为空；`%LOCALAPPDATA%\BlackScreen\settings.ini` 缺失时新 exe 行为==纯黑无文字即 v1 行为（验证器已覆盖） |
@@ -112,7 +111,7 @@
 **/goal 启动指令（交接者粘贴到执行窗口）**：
 
 ```text
-/goal 按 GOAL-V1-PROMPT.md 执行契约完成"一键黑屏"v1 自定义化改造（R1 遮罩颜色、R2 遮罩文字、R3 设置入口，R4 双击立即出遮罩与 R5 退出交互冻结不变）：以仓库根 RESEARCH-V1.md §5 架构决策表为唯一事实源实现 src/ 并交付。完成证据：1) build.cmd 退出码 0 且产出 dist\一键黑屏.exe；2) verify 全部验证器 PASS 且退出码 0；3) install.ps1 幂等生效且 DeskBox 双快捷方式目标正确；4) feature/mask-customization 分支工作树干净且 git diff main -- baseline/ 为空；5) RESEARCH-V1.md §9、docs/VERIFY-V1.md、使用说明.txt 齐备。以第 1–4 条命令输出与文件实据为唯一完成依据，计划与结论式回复不作数；本目标仅此一项，做到即停，过程中不留未完成待办。
+/goal 按 GOAL-V1-PROMPT.md 执行契约完成"一键黑屏"v1 自定义化改造（R1 遮罩颜色、R2 遮罩文字、R3 设置入口，R4 双击立即出遮罩与 R5 退出交互冻结不变）：以仓库根 RESEARCH-V1.md §5 架构决策表为唯一事实源实现 src/ 并交付。完成证据：1) build.cmd 退出码 0 且产出 dist\一键黑屏.exe；2) verify 全部验证器 PASS 且退出码 0；3) install.ps1 幂等生效且双快捷方式目标正确；4) feature/mask-customization 分支工作树干净且 git diff main -- baseline/ 为空；5) RESEARCH-V1.md §9、docs/VERIFY-V1.md、使用说明.txt 齐备。以第 1–4 条命令输出与文件实据为唯一完成依据，计划与结论式回复不作数；本目标仅此一项，做到即停，过程中不留未完成待办。
 ```
 
 **收尾动作（执行窗口最后执行）**：

@@ -75,8 +75,8 @@
 - 产出：全绿证据 + 干净的 git 状态。
 
 ### 边界清单
-- 允许：仓库内一切新增/修改（含 assets\ 产物入库）；DeskBox 目录仅两个指名 .lnk；`%LOCALAPPDATA%\BlackScreen\` 读写；运行验证器（会闪现遮罩）；`_probe\` 放临时预览。
-- 禁止：改 baseline/；改 src\Program.cs/MaskConfig.cs/OverlayForm.cs；改 DeskBox 其他文件；改系统设置/注册表（含深浅色——验证与验收都不得切换系统主题）；联网下载依赖；把任何凭证写进文件或提示词。
+- 允许：仓库内一切新增/修改（含 assets\ 产物入库）；快捷方式目录仅两个指名 .lnk；`%LOCALAPPDATA%\BlackScreen\` 读写；运行验证器（会闪现遮罩）；`_probe\` 放临时预览。
+- 禁止：改 baseline/；改 src\Program.cs/MaskConfig.cs/OverlayForm.cs；改快捷方式目录其他文件；改系统设置/注册表（含深浅色——验证与验收都不得切换系统主题）；联网下载依赖；把任何凭证写进文件或提示词。
 
 ## 5. 铁律（不可协商）
 
@@ -89,7 +89,7 @@
 ## 6. 配置文件与命令速查
 
 - 编译器：`C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe`（C#5；源码 UTF-8 带 BOM）。
-- 仓库根：`D:\Download\Agent Vault\一键黑屏`；快捷方式目录：`C:\Users\Lenovo\DeskBox\DeskBox\`。
+- 仓库根：`D:\Download\Agent Vault\一键黑屏`。
 - 配置：`%LOCALAPPDATA%\BlackScreen\settings.ini`（v2 不改其语义）。
 - 图标再生成（显式，默认构建不做）：`csc -nologo -target:exe -out:_probe\MakeIcon.exe tools\MakeIcon.cs` → 运行 → 人工比对 assets\ 差异后提交。
 - wbx 桥：`node "C:\Users\Lenovo\.zcode\wbx-bridge\scripts\wbx.mjs" ask --file <材料.txt> --as codex`。

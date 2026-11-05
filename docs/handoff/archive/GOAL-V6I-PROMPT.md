@@ -23,7 +23,7 @@
 
 ## 2. 背景
 
-A 轨已根修幻影键退出缺陷（产品行为变更→需发 v1.0.1），B 轨已根修 VerifySettings 环境敏感。用户定案：每轮完成默认推送（RESEARCH-V6 §7）。本机＝PC2（迁移目标机）：DeskBox 快捷方式未装、迁移阶段 8 五项未勾（第 4 项必须用户亲手）。发布工艺全部沿用 V5I 已验证序列，不发明新流程。
+A 轨已根修幻影键退出缺陷（产品行为变更→需发 v1.0.1），B 轨已根修 VerifySettings 环境敏感。用户定案：每轮完成默认推送（RESEARCH-V6 §7）。本机＝PC2（迁移目标机）：快捷方式未装、迁移阶段 8 五项未勾（第 4 项必须用户亲手）。发布工艺全部沿用 V5I 已验证序列，不发明新流程。
 
 ## 3. Phase 任务
 
@@ -44,7 +44,7 @@ A 轨已根修幻影键退出缺陷（产品行为变更→需发 v1.0.1），B 
 - 真端点冒烟：构建后的设置窗静默检查→「已是最新」（本地 1.0.1 vs latest v1.0.1）；输出/状态实录留档。
 
 ### Phase 4 · PC2 收尾与证据
-- `powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1`：两行 `[OK] …lnk`＋完成行（DeskBox 快捷方式落位）。
+- `powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1`：两行 `[OK] …lnk`＋完成行（快捷方式落位）。
 - 程序化冒烟：遮罩启动→注入按键退出成功；`--settings` 开→改设置→保存路径成功（对照手册阶段 8 第 3/5 项口径）。
 - `docs/MIGRATE-V6-PC2.md`：阶段 8 五项对照表（1 fsck 补档、2 status、3 七件全绿、4 **标注「待用户亲手双击冒烟」**、5 设置窗程序化证据＋用户可复核指引）＋「清理准入证」状态说明（四项已证＋第 4 项待用户）。
 - `docs/VERIFY-V6.md`：本轮集成总证据（合并/全绿×2/发布序列/冒烟/版本裁决表）。
@@ -68,7 +68,7 @@ A 轨已根修幻影键退出缺陷（产品行为变更→需发 v1.0.1），B 
 2. 干净键态 `verify.cmd` 末行 `[OK] ALL VERIFIERS PASSED` 出现≥2 次实录（docs/VERIFY-V6.md）。
 3. `gh release view v1.0.1` 三资产（zip/exe/SHA256SUMS）在位且 digest 与本地 certutil 复算一致。
 4. `src/AppInfo.cs` 含 `Version = "1.0.1"`；`git grep -n "1\.0\.0"` 残留仅历史过程文档（裁决表留档）。
-5. install.ps1 输出两 `[OK]` 快捷方式行；DeskBox 目录两 .lnk 存在且目标指向本仓 dist。
+5. install.ps1 输出两 `[OK]` 快捷方式行；快捷方式目录两 .lnk 存在且目标指向本仓 dist。
 6. docs/MIGRATE-V6-PC2.md 五项对照齐（第 4 项明确「待用户」）；migrate/ 三条 digest MATCH 实录。
 7. 设置窗「已是最新」真端点冒烟实录在 docs/VERIFY-V6.md。
 
