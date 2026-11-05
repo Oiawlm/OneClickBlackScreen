@@ -1,6 +1,6 @@
 # docs/lessons.md · 跨轮坑库
 
-> **一句话定位**：全项目历史踩坑的单一汇总——每条「现象→根因→正解→出处→防再犯锚点」五要素；改任何代码/文档/流程前先来查，交接文档「踩坑」字段引此处编号。　**来源**：[RESEARCH-V8 §4.2](handoff/2026-11-05-v8-structure/RESEARCH-V8.md) 12 条种子＋历史 VERIFY/REVIEW/PUBLISH 事故与移交注记提炼。　**日期**：2026-11-05　行数预算：≤180 行。
+> **一句话定位**：全项目历史踩坑的单一汇总——每条「现象→根因→正解→出处→防再犯锚点」五要素；改任何代码/文档/流程前先来查，交接文档「踩坑」字段引此处编号。　**来源**：[RESEARCH-V8 §4.2](handoff/archive/2026-11-05-v8-structure/RESEARCH-V8.md) 12 条种子＋历史 VERIFY/REVIEW/PUBLISH 事故与移交注记提炼。　**日期**：2026-11-05　行数预算：≤180 行。
 >
 > **出处口径**：一律写**归档后路径** `docs/handoff/archive/...`（git mv 只改路径，内容与行号不变）；核内容时映射回归档前位置——VERIFY/REVIEW/PUBLISH 等系原在 `docs/` 下（去掉 `handoff/archive/` 段即回 `docs/`），RESEARCH/PLAN/GOAL 系原在仓库根目录。`AGENTS.md`、`src/**`、`verify.cmd` 不归档，按原路径引用。**收录纪律：宁缺毋滥——每条必须有可打开的真实出处，禁凭印象编造；新坑先补出处再入册。**
 
