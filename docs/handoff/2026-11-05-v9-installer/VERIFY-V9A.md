@@ -172,7 +172,15 @@ pure_exit=0
 
 ## 9. 提交与推送记录
 
-（推送后回填）
+- 提交：`559aba1 deskbox(A): V9 根除——…`（全量摘要见 git log），17 files changed（16 手术件＋本文件新增），792 insertions(+) / 141 deletions(-)（含本文件 721 行）。
+- 推送：`git push -u origin feature/deskbox-purge-v9` → `* [new branch] feature/deskbox-purge-v9 -> feature/deskbox-purge-v9`（已设上游）。
+- 远端实证：`git ls-remote --heads origin feature/deskbox-purge-v9` →
+
+```
+559aba1cb9ad83943bc633c130f09f89ed1a6167	refs/heads/feature/deskbox-purge-v9
+```
+
+- 本节回填为第二个提交（不改写已推送历史）。
 
 ## 附录 A · 全量逐文件手术 diff
 
