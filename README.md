@@ -37,12 +37,12 @@
 
 ## 📦 下载与安装
 
-打开 [Releases 页](https://github.com/Oiawlm/OneClickBlackScreen/releases) 下载最新版（当前 [v1.0.2](https://github.com/Oiawlm/OneClickBlackScreen/releases/tag/v1.0.2)）：
+打开 [Releases 页](https://github.com/Oiawlm/OneClickBlackScreen/releases) 下载最新版（当前 [v1.1.0](https://github.com/Oiawlm/OneClickBlackScreen/releases/tag/v1.1.0)）：
 
 | 下载 | 适合谁 | 用法 |
 |---|---|---|
-| `OneClickBlackScreen-Setup-1.0.2.exe`（推荐） | 想要双击安装、开始菜单快捷方式与可随时卸载的常规用户 | 双击运行安装向导；默认装到当前用户目录，无需管理员权限 |
-| `OneClickBlackScreen-v1.0.2.zip`（便携备选，Release 页显示名「一键黑屏 v1.0.2 完整包」） | 免安装、U 盘随取随用 | 解压到任意目录，双击 exe 即用 |
+| `OneClickBlackScreen-Setup-1.1.0.exe`（推荐） | 想要双击安装、开始菜单快捷方式与可随时卸载的常规用户 | 双击运行安装向导；默认装到当前用户目录，无需管理员权限 |
+| `OneClickBlackScreen-v1.1.0.zip`（便携备选，Release 页显示名「一键黑屏 v1.1.0 完整包」） | 免安装、U 盘随取随用 | 解压到任意目录，双击 exe 即用 |
 | `OneClickBlackScreen.exe` | 只要最小体积的裸单文件；也会被程序内更新器直连下载 | 放置到任意目录 |
 
 注：zip 便携包含主程序 exe、同名 `.exe.config`、`icon-settings.ico` 与使用说明；Setup 安装版内容相同，另带开始菜单「一键黑屏 / 一键黑屏-设置」两个快捷方式（桌面快捷方式默认不勾选）与系统卸载器。
@@ -50,7 +50,7 @@
 （推荐）校验文件完整性——在 PowerShell 或 cmd 中运行（以 Setup 为例，替换为你实际下载的文件名）：
 
 ```
-certutil -hashfile OneClickBlackScreen-Setup-1.0.2.exe SHA256
+certutil -hashfile OneClickBlackScreen-Setup-1.1.0.exe SHA256
 ```
 
 将输出的哈希与 Releases 页 `SHA256SUMS` 文件中对应行逐字比对，一致即通过。
