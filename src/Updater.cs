@@ -6,6 +6,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
+using Microsoft.Win32;
 
 // Hand-written GitHub Releases updater (B1/B3-B6, R1): zero dependencies beyond
 // the BCL, so the single-exe csc build stays intact. Check() reads the
@@ -183,12 +184,62 @@ internal static class Updater
                     catch { }
                     throw new IOException("写入新版本失败（" + ex.Message + "），已还原原版本。", ex);
                 }
+                // With the new bytes on disk, refresh the per-user
+                // "Add/Remove Programs" entry so its DisplayVersion cannot
+                // lag behind the installed exe (V9 installer integration).
+                SyncUninstallVersion(targetPath);
             }
             finally
             {
                 if (owned) mutex.ReleaseMutex();
             }
         }
+    }
+
+    // The per-user Inno Setup uninstall key (HKCU, because the installer runs
+    // PrivilegesRequired=lowest). The GUID must stay byte-identical to
+    // RealAppId in setup\OneClickBlackScreen.iss - that script's comment
+    // points back here. An AppId cannot be shared across an .iss and C#,
+    // so each file carries the value exactly once and they cross-verify.
+    private const string UninstallKeyPath =
+        @"Software\Microsoft\Windows\CurrentVersion\Uninstall\{5A17668F-45A0-48F0-B5B1-067E37EFA98D}_is1";
+
+    // Sync "Add/Remove Programs" DisplayVersion after a completed swap, but
+    // only when this copy is actually installed (key present). A portable
+    // user has no HKCU entry, so the call reads as a no-op with zero
+    // observable change - exactly what VerifyUpdate proves on a dev machine.
+    // Best-effort on purpose: the swap already succeeded, so a registry
+    // hiccup must never turn the update into a reported failure.
+    private static void SyncUninstallVersion(string installedPath)
+    {
+        try
+        {
+            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(UninstallKeyPath, true))
+            {
+                if (key == null) return;
+                string version = InstalledVersionOf(installedPath);
+                if (version != null)
+                    key.SetValue("DisplayVersion", version, RegistryValueKind.String);
+            }
+        }
+        catch { }
+    }
+
+    // The only ground truth for the new version string is the file that was
+    // just installed - the process running this code still carries the OLD
+    // AppInfo.Version. AppInfo.Version is a compile-time const, so reading
+    // its field through reflection copies the literal without executing any
+    // code from the loaded assembly; anything unexpected reads as null and
+    // skips the write rather than writing a value known to be stale.
+    private static string InstalledVersionOf(string path)
+    {
+        try
+        {
+            System.Reflection.Assembly assembly = System.Reflection.Assembly.LoadFrom(path);
+            System.Reflection.FieldInfo field = assembly.GetType("AppInfo").GetField("Version");
+            return field != null && field.IsLiteral ? (string)field.GetValue(null) : null;
+        }
+        catch { return null; }
     }
 
     // B6 startup cleanup, riding the same mutex as the swap (V7S): a leftover

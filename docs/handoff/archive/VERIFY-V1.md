@@ -89,6 +89,6 @@ PASS TOTAL: A-F; 2 displays; max InputIdle 531 ms (limit 2000)
 - `build.cmd` → 退出码 0，`dist\一键黑屏.exe`（20992 字节）+ `dist\一键黑屏.exe.config`（239 字节）。
 - `verify.cmd` → 退出码 0，四件套全 PASS（25 条 PASS 行）：VerifyConfig 18 项 / VerifySettings 3 项 / VerifyMouseExit 5 键 / VerifyOverlay A–F（含 3 键前台+后台 + Alt 系统键、arm 冻结语义、第二实例自退）。
 - InputIdle 实测最大 **650 ms**（限值 2000 ms；多轮观测 531/634/726/650 ms）。
-- `install.ps1` 连跑两次均退出码 0（幂等），DeskBox 双快捷方式回读校验：`一键黑屏.lnk → dist\一键黑屏.exe（无参）`、`一键黑屏-设置.lnk → dist\一键黑屏.exe --settings`；目录内其他 11 个 .lnk 未触碰。
+- `install.ps1` 连跑两次均退出码 0（幂等），双快捷方式回读校验：`一键黑屏.lnk → dist\一键黑屏.exe（无参）`、`一键黑屏-设置.lnk → dist\一键黑屏.exe --settings`；目录内其他 11 个 .lnk 未触碰。
 - 验证器清单与最终结果：VerifyConfig PASS / VerifySettings PASS / VerifyMouseExit PASS / VerifyOverlay PASS，`[OK] ALL VERIFIERS PASSED`。
 - 分支：feature/mask-customization，工作树干净；`git diff main -- baseline/` 为空。

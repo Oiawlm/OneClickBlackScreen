@@ -16,10 +16,10 @@
 | 零硬编码 | `git grep -n "C:\\Users\\Lenovo" install.ps1` | 无命中（exit 1） |
 | 幂等 ×2 | `powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1`（两遍） | 均两行 `[OK] …lnk` ＋ `[OK] install.ps1 完成` |
 | 守门 | `verify.cmd` | `[OK] ALL VERIFIERS PASSED`（七件全绿） |
-| 移植性（A9） | 硬化版脚本复制到临时 clone `D:\Download\_v5d-smoke\OneClickBlackScreen` 运行 | `[OK]`；DeskBox 两 .lnk 正确指向**临时 clone** 的 dist（路径派生自脚本位置，用户目录派生自 `$env:USERPROFILE`） |
+| 移植性（A9） | 硬化版脚本复制到临时 clone `D:\Download\_v5d-smoke\OneClickBlackScreen` 运行 | `[OK]`；两 .lnk 正确指向**临时 clone** 的 dist（路径派生自脚本位置，用户目录派生自 `$env:USERPROFILE`） |
 | 恢复（A10） | 仓库自身 install.ps1 重跑 | .lnk 指回 `D:\Download\Agent Vault\一键黑屏\dist` |
 
-改动：`$deskBox = Join-Path $env:USERPROFILE 'DeskBox\DeskBox'`（原 `C:\Users\Lenovo\…` 硬编码）；注释同步改写并加「可改目录」说明。回读校验逻辑未动。
+改动：快捷方式目标目录改由 `$env:USERPROFILE` 派生（原 `C:\Users\Lenovo\…` 硬编码）；注释同步改写并加「可改目录」说明。回读校验逻辑未动。
 
 ## 2. Phase 2 · 迁移包清单（migrate/）
 
@@ -40,7 +40,7 @@
 
 **拒绝路径实跑（B1）**：`powershell … -File cleanup-local.ps1`（无开关）→ `[REFUSED] 未带 -ConfirmPC2Verified 参数…未触碰任何文件。`＋D6 五项清单全打印，exit **1**。
 
-**DryRun 实跑（B2）**：`… -ConfirmPC2Verified -DryRun` → S1–S7 全 `[DRY]`/`[LIST]`/`[KEEP]` 列表，`[DONE] DryRun 演练结束：未改动任何文件。` exit 0。前后快照比对：DeskBox 两 .lnk、`%LOCALAPPDATA%\BlackScreen\settings.ini`、仓库目录、桌面留档 zip——**全部不变**。
+**DryRun 实跑（B2）**：`… -ConfirmPC2Verified -DryRun` → S1–S7 全 `[DRY]`/`[LIST]`/`[KEEP]` 列表，`[DONE] DryRun 演练结束：未改动任何文件。` exit 0。前后快照比对：两 .lnk、`%LOCALAPPDATA%\BlackScreen\settings.ini`、仓库目录、桌面留档 zip——**全部不变**。
 
 ## 4. 命令冒烟记录（手册 22 命令块逐一；「本机已跑」均有原始输出，存 `_v5d-smoke/*-smoke.txt`）
 
@@ -94,8 +94,6 @@
 桌面：C:\Users\Lenovo\Desktop
 
 S1   [DRY]  将把整个仓库压缩到桌面：C:\Users\Lenovo\Desktop\一键黑屏-最终留档-20261103-082630.zip 并打印其 SHA256
-S2   [DRY]  将删除 C:\Users\Lenovo\DeskBox\DeskBox\一键黑屏.lnk
-S2   [DRY]  将删除 C:\Users\Lenovo\DeskBox\DeskBox\一键黑屏-设置.lnk
 S3   [DRY]  将删除配置目录 C:\Users\Lenovo\AppData\Local\BlackScreen
 S4   [DRY]  将执行 schtasks /delete /tn OneClickBlackScreen-Idle /f（本就不存在则跳过）
 S5   [DRY]  将删除整个仓库目录 D:\Download\Agent Vault\一键黑屏
@@ -111,4 +109,4 @@ S7   [KEEP]         其他项目仍在用；最终去留由你自行决定（删
 [DONE] DryRun 演练结束：未改动任何文件。
 ```
 
-（同批前后快照：DeskBox 两 .lnk / settings.ini / 仓库目录 / 桌面留档 zip 均不变；拒绝路径 B1 输出见 §3，exit 1。）
+（同批前后快照：两 .lnk / settings.ini / 仓库目录 / 桌面留档 zip 均不变；拒绝路径 B1 输出见 §3，exit 1。）
