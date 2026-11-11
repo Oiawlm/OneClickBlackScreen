@@ -47,8 +47,9 @@ internal static class VerifyUpdate
 
             CheckVersionTable();
             CheckFullChain();
+            CheckDualAssetAndStaging();
 
-            Console.WriteLine("PASS TOTAL: update checks (version table + offline full chain)");
+            Console.WriteLine("PASS TOTAL: update checks (version table + offline full chain + dual-form staging)");
             return 0;
         }
         catch (Exception ex)
@@ -301,6 +302,176 @@ internal static class VerifyUpdate
         }
     }
 
+    // 3. V10 dual-form additions (D1/D2): the Setup asset resolution, the
+    // installed-form probe, the staged predownload (clean staging, verify,
+    // failure cleanup, per-form asset pick and fail-closed refusal), and the
+    // frozen silent-restart command line - asserted as data, the installer
+    // itself is never executed.
+    private static void CheckDualAssetAndStaging()
+    {
+        // The frozen asset-name formula first (RESEARCH §7).
+        Check(Updater.SetupAssetNameFor("v9.9.9") == "OneClickBlackScreen-Setup-9.9.9.exe",
+            "SetupAssetNameFor must strip the v prefix");
+        Check(Updater.SetupAssetNameFor("1.2.3") == "OneClickBlackScreen-Setup-1.2.3.exe",
+            "SetupAssetNameFor must accept a bare version");
+        // The frozen silent arguments as data - never launched.
+        Check(Updater.SetupSilentArguments == "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /FORCECLOSEAPPLICATIONS",
+            "the silent Setup arguments must match the frozen contract");
+        System.Diagnostics.ProcessStartInfo startInfo = Updater.SetupStartInfo(@"C:\somewhere\setup.exe");
+        Check(startInfo.FileName == @"C:\somewhere\setup.exe", "SetupStartInfo must carry the path");
+        Check(startInfo.Arguments == Updater.SetupSilentArguments,
+            "SetupStartInfo must carry the frozen arguments");
+        Console.WriteLine("PASS: Setup asset name + silent command line pinned as data (no installer executed)");
+
+        string work = Path.Combine(Path.GetTempPath(), "VerifyUpdateStaged-" + Path.GetRandomFileName());
+        Directory.CreateDirectory(work);
+        string staging = Updater.StagingDirectory;
+        try
+        {
+            using (MockServer server = MockServer.Start())
+            {
+                byte[] exePayload = BuildPayload();
+                byte[] setupPayload = new byte[100 * 1024];
+                for (int i = 0; i < setupPayload.Length; i++)
+                    setupPayload[i] = (byte)(i * 17 + 3);
+                string exeSha = Sha256Hex(exePayload);
+                string setupSha = Sha256Hex(setupPayload);
+
+                // -- dual-asset release: both URLs/hashes ride on UpdateInfo.
+                server.LatestJson = BuildDualJson("v9.9.9", exeSha, setupSha,
+                    exePayload.Length, setupPayload.Length, server.Base);
+                server.AssetBytes = exePayload;
+                server.SetupBytes = setupPayload;
+                Updater.UpdateInfo dual = Updater.Check(server.Base);
+                Check(dual != null, "the dual release must resolve");
+                Check(dual.SetupUrl == server.Base + "setup", "SetupUrl mismatch: " + dual.SetupUrl);
+                Check(dual.SetupSize == setupPayload.Length, "SetupSize mismatch");
+                Check(dual.SetupSha256Hex == setupSha, "SetupSha256Hex mismatch");
+                Check(dual.DownloadUrl != null && dual.Sha256Hex == exeSha,
+                    "the exe fields must stay populated alongside the Setup fields");
+                Console.WriteLine("PASS: dual-asset Check (Setup + exe URLs/hashes on UpdateInfo)");
+
+                // -- installed form: staged Setup download, clean staging, junk gone.
+                Updater.UseInstalledFormProbe(delegate { return true; });
+                try
+                {
+                    Directory.CreateDirectory(staging);
+                    File.WriteAllText(Path.Combine(staging, "stale-junk.bin"), "STALE");
+                    string staged = Updater.DownloadStaged(dual, null);
+                    Check(Path.GetFullPath(staged)
+                        == Path.GetFullPath(Path.Combine(staging, "OneClickBlackScreen-Setup-9.9.9.exe")),
+                        "the staged file must be the Setup asset name in the staging dir: " + staged);
+                    Check(BytesEqual(File.ReadAllBytes(staged), setupPayload),
+                        "the staged Setup bytes must match the payload");
+                    string[] left = Directory.GetFiles(staging);
+                    Check(left.Length == 1, "staging must hold exactly the staged file, saw " + left.Length);
+                    Console.WriteLine("PASS: installed-form staged predownload (staging reset, verified artifact resident)");
+
+                    // -- tampered Setup digest: refused, staging cleaned.
+                    string wrongSha = Sha256Hex(Encoding.UTF8.GetBytes("not the setup"));
+                    server.LatestJson = BuildDualJson("v9.9.9", exeSha, wrongSha,
+                        exePayload.Length, setupPayload.Length, server.Base);
+                    Updater.UpdateInfo tampered = Updater.Check(server.Base);
+                    ExpectFailure(delegate { Updater.DownloadStaged(tampered, null); },
+                        "a tampered Setup digest", "SHA-256");
+                    Check(!Directory.Exists(staging) || Directory.GetFiles(staging).Length == 0,
+                        "a failed staged download must leave the staging directory clean");
+                    Console.WriteLine("PASS: tampered Setup digest refused + staging cleaned");
+
+                    // -- Setup asset missing + installed form: fail-closed per form.
+                    server.LatestJson = BuildLatestJson("v9.9.9", "sha256:" + exeSha,
+                        exePayload.Length, server.Base + "/asset", null);
+                    Updater.UpdateInfo exeOnly = Updater.Check(server.Base);
+                    Check(exeOnly != null && exeOnly.SetupUrl == null,
+                        "an exe-only release must resolve with SetupUrl null");
+                    ExpectFailure(delegate { Updater.DownloadStaged(exeOnly, null); },
+                        "the installed form against an exe-only release", "安装包资产");
+                    Console.WriteLine("PASS: missing Setup asset refuses the installed form (fail-closed by form)");
+                }
+                finally
+                {
+                    Updater.UseInstalledFormProbe(null);
+                }
+
+                // -- portable form: the staged artifact is the exe itself.
+                Updater.UseInstalledFormProbe(delegate { return false; });
+                try
+                {
+                    server.LatestJson = BuildDualJson("v9.9.9", exeSha, setupSha,
+                        exePayload.Length, setupPayload.Length, server.Base);
+                    Updater.UpdateInfo dualAgain = Updater.Check(server.Base);
+                    string stagedExe = Updater.DownloadStaged(dualAgain, null);
+                    Check(Path.GetFileName(stagedExe) == AppInfo.UpdateAssetName,
+                        "the portable form must stage the exe asset: " + stagedExe);
+                    Check(BytesEqual(File.ReadAllBytes(stagedExe), exePayload),
+                        "the staged exe bytes must match the payload");
+                    Console.WriteLine("PASS: portable-form staged predownload (exe asset, verified)");
+                }
+                finally
+                {
+                    Updater.UseInstalledFormProbe(null);
+                }
+
+                // -- Setup digest absent, SHA256SUMS fallback carries it.
+                string sumsBody = setupSha + "  OneClickBlackScreen-Setup-9.9.9.exe\n"
+                    + exeSha + "  " + AppInfo.UpdateAssetName + "\n";
+                server.LatestJson = BuildDualJson("v9.9.9", exeSha, null,
+                    exePayload.Length, setupPayload.Length, server.Base, true);
+                server.SumsBody = sumsBody;
+                Updater.UseInstalledFormProbe(delegate { return true; });
+                try
+                {
+                    Updater.UpdateInfo sumsOnly = Updater.Check(server.Base);
+                    Check(sumsOnly != null && sumsOnly.SetupSha256Hex == null,
+                        "the digest-less Setup asset must resolve before the fallback");
+                    string stagedSums = Updater.DownloadStaged(sumsOnly, null);
+                    Check(BytesEqual(File.ReadAllBytes(stagedSums), setupPayload),
+                        "the SHA256SUMS fallback must verify the staged Setup");
+                    Console.WriteLine("PASS: SHA256SUMS fallback verified the Setup asset line");
+                }
+                finally
+                {
+                    Updater.UseInstalledFormProbe(null);
+                }
+            }
+        }
+        finally
+        {
+            try { if (Directory.Exists(staging)) Directory.Delete(staging, true); } catch { }
+            try { Directory.Delete(work, true); } catch { }
+        }
+    }
+
+    // A release carrying both update assets (plus the SUMS asset when asked),
+    // each with its own digest or null.
+    private static string BuildDualJson(string tag, string exeSha, string setupSha,
+        long exeSize, long setupSize, string baseUrl)
+    {
+        return BuildDualJson(tag, exeSha, setupSha, exeSize, setupSize, baseUrl, true);
+    }
+
+    private static string BuildDualJson(string tag, string exeSha, string setupSha,
+        long exeSize, long setupSize, string baseUrl, bool withSums)
+    {
+        StringBuilder json = new StringBuilder();
+        json.Append("{\"tag_name\": \"").Append(tag).Append("\", \"prerelease\": false, \"assets\": [");
+        json.Append("{\"name\": \"").Append(AppInfo.UpdateAssetName)
+            .Append("\", \"browser_download_url\": \"").Append(baseUrl).Append("asset")
+            .Append("\", \"size\": ").Append(exeSize)
+            .Append(", \"digest\": ").Append(exeSha == null ? "null" : "\"sha256:" + exeSha + "\"")
+            .Append("}");
+        json.Append(", {\"name\": \"").Append(Updater.SetupAssetNameFor(tag))
+            .Append("\", \"browser_download_url\": \"").Append(baseUrl).Append("setup")
+            .Append("\", \"size\": ").Append(setupSize)
+            .Append(", \"digest\": ").Append(setupSha == null ? "null" : "\"sha256:" + setupSha + "\"")
+            .Append("}");
+        if (withSums)
+            json.Append(", {\"name\": \"SHA256SUMS\", \"browser_download_url\": \"")
+                .Append(baseUrl).Append("sums").Append("\", \"size\": 96, \"digest\": null}");
+        json.Append("]}");
+        return json.ToString();
+    }
+
     // One barrier round: both waiters park on the gun, the gun releases them
     // into ReplaceSequence at the same instant, and the per-slot errors come
     // back after Join (slot i is written only by thread i, so no locking).
@@ -378,6 +549,7 @@ internal static class VerifyUpdate
 
         public string LatestJson;
         public byte[] AssetBytes;
+        public byte[] SetupBytes;
         public string SumsBody;
         public string LastUserAgent;
 
@@ -452,6 +624,12 @@ internal static class VerifyUpdate
             {
                 if (AssetBytes == null) { NotFound(context); return; }
                 WriteBytes(context, AssetBytes, "application/octet-stream");
+                return;
+            }
+            if (path == "/setup")
+            {
+                if (SetupBytes == null) { NotFound(context); return; }
+                WriteBytes(context, SetupBytes, "application/octet-stream");
                 return;
             }
             if (path == "/sums")

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Net;
@@ -16,15 +17,21 @@ using Microsoft.Win32;
 // Every method is synchronous - the settings dialog drives them from the thread
 // pool and marshals back with Control.Invoke; the mask mode never touches this
 // class (U2: only the settings window ever goes online).
+// V10 dual-form (D1/D2): Check() also resolves the Setup asset, DownloadStaged()
+// predownloads the artifact this installation form consumes into
+// %TEMP%\BlackScreenUpdate\, and LaunchSetup() hands the installed form over to
+// the silent Inno reinstall. The portable self-replace chain below is untouched.
 internal static class Updater
 {
     // GitHub rejects default .NET user agents, so every request carries ours.
     private const string UserAgent = "OneClickBlackScreen-Updater/" + AppInfo.Version;
 
-    // What the settings footer needs to know about a newer release. Sha256Hex
-    // is the primary expectation (assets[].digest, "sha256:<hex>"); SumsUrl is
-    // the SHA256SUMS fallback asset; either may be null and the chain stays
-    // fail-closed (B5).
+    // What the settings footer needs to know about a newer release. The exe
+    // fields (DownloadUrl/Size/Sha256Hex) describe the portable self-replace
+    // asset; the Setup fields describe the installer asset the installed form
+    // consumes (V10 D2). Sha256Hex/SetupSha256Hex are the primary expectations
+    // (assets[].digest, "sha256:<hex>"); SumsUrl is the shared SHA256SUMS
+    // fallback asset; either may be null and the chain stays fail-closed (B5).
     internal sealed class UpdateInfo
     {
         public string Tag;
@@ -32,6 +39,9 @@ internal static class Updater
         public long Size;
         public string Sha256Hex;
         public string SumsUrl;
+        public string SetupUrl;
+        public long SetupSize;
+        public string SetupSha256Hex;
     }
 
     // GET repos/{owner}/{repo}/releases/latest. Returns null when the release
@@ -40,9 +50,17 @@ internal static class Updater
     // surface a concrete reason.
     public static UpdateInfo Check(string baseUrl)
     {
+        return Check(baseUrl, 0);
+    }
+
+    // Timeout overload (V10 D7): the overlay's throttled background check runs
+    // with a few seconds of patience so a dead network can never hold a mask
+    // hostage; zero keeps the WebClient default for the settings window.
+    public static UpdateInfo Check(string baseUrl, int timeoutMs)
+    {
         string url = baseUrl + "repos/" + AppInfo.RepoOwner + "/" + AppInfo.RepoName + "/releases/latest";
         string json;
-        using (WebClient client = CreateClient())
+        using (WebClient client = CreateClient(timeoutMs))
         {
             json = client.DownloadString(url);
         }
@@ -62,6 +80,12 @@ internal static class Updater
                 info.DownloadUrl = asset.StringField("browser_download_url");
                 info.Size = asset.NumberField("size", -1);
                 info.Sha256Hex = ParseDigest(asset.StringField("digest"));
+            }
+            else if (name == SetupAssetNameFor(tag))
+            {
+                info.SetupUrl = asset.StringField("browser_download_url");
+                info.SetupSize = asset.NumberField("size", -1);
+                info.SetupSha256Hex = ParseDigest(asset.StringField("digest"));
             }
             else if (name == "SHA256SUMS")
             {
@@ -88,7 +112,7 @@ internal static class Updater
             {
                 sums = client.DownloadString(update.SumsUrl);
             }
-            expected = ParseSha256Sums(sums);
+            expected = ParseSha256Sums(sums, AppInfo.UpdateAssetName);
         }
         if (expected == null)
             throw new InvalidOperationException("官方发布未提供 SHA-256 校验和，已按安全策略拒绝更新。");
@@ -118,6 +142,181 @@ internal static class Updater
         finally
         {
             try { if (File.Exists(temp)) File.Delete(temp); } catch { }
+        }
+    }
+
+    // ---- V10 dual-form update (D1/D2) ---------------------------------------
+    // Installed form = the Setup asset silently reinstalled by Inno (which
+    // remembers the install directory, closes the app and restarts the mask);
+    // portable form = the exe self-replace chain above, byte-for-byte the V7
+    // behavior. The preddownload staging below serves both: the artifact this
+    // form consumes lands verified in %TEMP%\BlackScreenUpdate\ so the user's
+    // "update now" click is instantaneous (D1).
+
+    // Frozen cross-track contract (RESEARCH-V10 §7): the Setup release asset
+    // name, mirroring build-setup.cmd's OutputBaseFilename (tag with the
+    // leading "v" stripped).
+    public static string SetupAssetNameFor(string tag)
+    {
+        string version = tag != null && tag.StartsWith("v", StringComparison.Ordinal)
+            ? tag.Substring(1) : tag;
+        return "OneClickBlackScreen-Setup-" + version + ".exe";
+    }
+
+    // The per-user Inno uninstall key (see UninstallKeyPath below): its
+    // existence is the installed-form verdict (D2). Read-only HKCU probe
+    // behind an injectable seam so the offline verifier can pin both states.
+    public static bool IsInstalledForm
+    {
+        get { return installedFormProbe != null ? installedFormProbe() : ReadUninstallKeyPresent(); }
+    }
+
+    private static Func<bool> installedFormProbe;
+
+    internal static void UseInstalledFormProbe(Func<bool> probe)
+    {
+        installedFormProbe = probe;
+    }
+
+    private static bool ReadUninstallKeyPresent()
+    {
+        try
+        {
+            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(UninstallKeyPath))
+            {
+                return key != null;
+            }
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    // Predownload staging directory (RESEARCH-V10 §7): one well-known place,
+    // emptied before anything lands so no stale artifact can mix in, and the
+    // verified file stays put until the one-click apply consumes it.
+    public static string StagingDirectory
+    {
+        get { return Path.Combine(Path.GetTempPath(), "BlackScreenUpdate"); }
+    }
+
+    // Download the artifact this installation form consumes, verified, into
+    // the staging directory (D1). The whole reset/download/verify span rides
+    // the machine-wide update mutex so two settings instances cannot
+    // interleave their staging writes; a failure cleans the directory again -
+    // only a verified file is ever left staged.
+    public static string DownloadStaged(UpdateInfo update, Action<int> onProgress)
+    {
+        bool installed = IsInstalledForm;
+        string assetName = installed ? SetupAssetNameFor(update.Tag) : AppInfo.UpdateAssetName;
+        using (Mutex mutex = new Mutex(false, UpdateMutexName))
+        {
+            bool owned = false;
+            try
+            {
+                try { owned = mutex.WaitOne(UpdateMutexWaitMs); }
+                catch (AbandonedMutexException) { owned = true; }
+                if (!owned)
+                    throw new IOException("另一更新正在进行，请稍后重试。");
+                string directory = StagingDirectory;
+                ResetDirectory(directory);
+                try
+                {
+                    string target = Path.Combine(directory, assetName);
+                    DownloadStagedAsset(update, installed, target, onProgress);
+                    return target;
+                }
+                catch
+                {
+                    try { if (Directory.Exists(directory)) Directory.Delete(directory, true); } catch { }
+                    throw;
+                }
+            }
+            finally
+            {
+                if (owned) mutex.ReleaseMutex();
+            }
+        }
+    }
+
+    // One staged asset: resolve the expected hash for this form's asset name
+    // (digest first, SHA256SUMS line fallback, double-missing refusal - the
+    // same fail-closed chain as the portable path, B5), then download with
+    // the declared size check and the SHA-256 verify, in place.
+    private static void DownloadStagedAsset(UpdateInfo update, bool installed, string target, Action<int> onProgress)
+    {
+        string assetName = installed ? SetupAssetNameFor(update.Tag) : AppInfo.UpdateAssetName;
+        string url = installed ? update.SetupUrl : update.DownloadUrl;
+        long size = installed ? update.SetupSize : update.Size;
+        if (url == null)
+            throw new InvalidDataException("最新发布未包含"
+                + (installed ? "安装包资产 " : "更新资产 ") + assetName + "。");
+        string expected = installed ? update.SetupSha256Hex : update.Sha256Hex;
+        if (expected == null && update.SumsUrl != null)
+        {
+            string sums;
+            using (WebClient client = CreateClient())
+            {
+                sums = client.DownloadString(update.SumsUrl);
+            }
+            expected = ParseSha256Sums(sums, assetName);
+        }
+        if (expected == null)
+            throw new InvalidOperationException("官方发布未提供 SHA-256 校验和，已按安全策略拒绝更新。");
+        DownloadFile(url, target, size, onProgress);
+        VerifySha256(target, expected);
+    }
+
+    // Empty the staging directory before a landing (best-effort: a file locked
+    // by another process stays, and the verify still guards the new artifact),
+    // then make sure the directory itself exists.
+    private static void ResetDirectory(string directory)
+    {
+        try
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, true);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+        Directory.CreateDirectory(directory);
+    }
+
+    // Frozen cross-track contract (RESEARCH-V10 §7): the silent reinstall
+    // parameters - no UI, no message boxes, no reboot, force-close the
+    // running app instances so the overwrite install can proceed.
+    public const string SetupSilentArguments = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /FORCECLOSEAPPLICATIONS";
+
+    // The launch facts (path + arguments) as one construct, so the offline
+    // verifier can pin the frozen command line without ever running the
+    // installer.
+    internal static ProcessStartInfo SetupStartInfo(string setupPath)
+    {
+        return new ProcessStartInfo(setupPath, SetupSilentArguments);
+    }
+
+    // Installed-form apply (D2): launch the staged, verified Setup under the
+    // update mutex - a short critical section around the spawn so two
+    // instances cannot start two setups - then hand everything to Inno (B
+    // track): it closes the app, reinstalls over the remembered directory and
+    // restarts the mask. The caller exits this process right after.
+    public static Process LaunchSetup(string setupPath)
+    {
+        using (Mutex mutex = new Mutex(false, UpdateMutexName))
+        {
+            bool owned = false;
+            try
+            {
+                try { owned = mutex.WaitOne(UpdateMutexWaitMs); }
+                catch (AbandonedMutexException) { owned = true; }
+                if (!owned)
+                    throw new IOException("另一更新正在进行，请稍后重试。");
+                return Process.Start(SetupStartInfo(setupPath));
+            }
+            finally
+            {
+                if (owned) mutex.ReleaseMutex();
+            }
         }
     }
 
@@ -334,8 +533,10 @@ internal static class Updater
 
     // SHA256SUMS lines read "<hex>␣␣<name>" (certutil/GNU style); a leading "*"
     // on the name (GNU binary marker) is tolerated. Returns null when no line
-    // matches the update asset (B5 fail-closed).
-    private static string ParseSha256Sums(string sums)
+    // matches the asked-for asset (B5 fail-closed). The asset name is a
+    // parameter since V10: the file covers both the portable exe and the
+    // Setup installer lines.
+    private static string ParseSha256Sums(string sums, string assetName)
     {
         if (sums == null) return null;
         string[] lines = sums.Replace("\r\n", "\n").Split('\n');
@@ -348,7 +549,7 @@ internal static class Updater
             string name = parts[1];
             if (name.StartsWith("*", StringComparison.Ordinal)) name = name.Substring(1);
             string hash = parts[0].ToLowerInvariant();
-            if (name == AppInfo.UpdateAssetName && IsSha256Hex(hash)) return hash;
+            if (name == assetName && IsSha256Hex(hash)) return hash;
         }
         return null;
     }
@@ -367,14 +568,41 @@ internal static class Updater
     // GitHub requires TLS 1.2+ and rejects default .NET user agents. This app
     // ships no supportedRuntime marker, so TLS 1.2 is enabled explicitly
     // instead of trusting the .NET 4.8 SystemDefault (B4); |= keeps any
-    // stronger protocol the OS already negotiated.
+    // stronger protocol the OS already negotiated. timeoutMs > 0 caps the
+    // request patience (V10 D7 overlay check); zero keeps the default.
     private static WebClient CreateClient()
     {
+        return CreateClient(0);
+    }
+
+    private static WebClient CreateClient(int timeoutMs)
+    {
         ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
-        WebClient client = new WebClient();
+        WebClient client = timeoutMs > 0 ? new TimedWebClient(timeoutMs) : new WebClient();
         client.Headers[HttpRequestHeader.UserAgent] = UserAgent;
         client.Encoding = Encoding.UTF8;
         return client;
+    }
+
+    // WebClient hides the underlying request timeout; the overlay's
+    // short-patience check (V10 D7) needs one, so this subclass threads a
+    // deadline into every request it issues - the established BCL pattern
+    // for WebClient timeouts.
+    private sealed class TimedWebClient : WebClient
+    {
+        private readonly int timeoutMs;
+
+        internal TimedWebClient(int timeoutMs)
+        {
+            this.timeoutMs = timeoutMs;
+        }
+
+        protected override WebRequest GetWebRequest(Uri address)
+        {
+            WebRequest request = base.GetWebRequest(address);
+            if (timeoutMs > 0) request.Timeout = timeoutMs;
+            return request;
+        }
     }
 
     // Minimal JSON reader for the fixed releases/latest shape: objects, arrays,

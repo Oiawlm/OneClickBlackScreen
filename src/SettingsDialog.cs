@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Windows.Forms;
 
 // Settings window opened via "--settings". Edits a working copy of MaskConfig and
@@ -47,9 +48,15 @@ internal sealed class SettingsDialog : Form
     private readonly Button checkUpdateButton = new Button();
     private readonly Label updateStatusLabel = new Label();
     private readonly Button applyUpdateButton = new Button();
+    private readonly Label dataLabel = new Label();
+    private readonly Label dataPathLabel = new Label();
+    private readonly Button changeDataButton = new Button();
     private readonly Timer themeTimer = new Timer();
     private MaskConfig draft;
     private Updater.UpdateInfo pendingUpdate;
+    // V10 D1: the verified predownload staged in %TEMP%\BlackScreenUpdate\;
+    // "apply" only ever runs with this in hand (instant install semantics).
+    private string stagedUpdatePath;
     private float dpiScale = 1f;
     private bool lightTheme = ThemePalette.AppsUseLightTheme();
     private ThemePalette palette;
@@ -142,6 +149,16 @@ internal sealed class SettingsDialog : Form
         idleHintLabel.AutoSize = false;
         hintLabel.Text = "配置文件：" + MaskConfig.SettingsPath + "\n保存后，下一次启动遮罩时生效；退出交互与旧版完全一致。";
         hintLabel.AutoSize = false;
+        // Data location section (V10 D3/D4): current root plus the change
+        // button; the migration pipeline behind it lives in AppPaths.
+        dataLabel.Text = "数据位置";
+        dataLabel.AutoSize = false;
+        dataPathLabel.Text = "当前：" + AppPaths.DataRoot;
+        dataPathLabel.AutoSize = false;
+        dataPathLabel.TextAlign = ContentAlignment.MiddleLeft;
+        dataPathLabel.AutoEllipsis = true;
+        changeDataButton.Text = "更改…";
+        changeDataButton.Click += delegate { BeginDataLocationChange(); };
         resetButton.Text = "恢复默认";
         resetButton.Click += delegate { ResetToDefault(); };
         cancelButton.Text = "取消";
@@ -164,17 +181,19 @@ internal sealed class SettingsDialog : Form
         applyUpdateButton.Click += delegate { BeginApplyUpdate(); };
         // Explicit tab order for the focusable controls, matching the visual
         // reading order; labels, the preview and the swatches stay out of the
-        // chain. The idle combo reads after the text box (content column), the
-        // footer strip's update pair follows, then the button row.
+        // chain. The idle combo reads after the text box, the data location
+        // change button follows (content column), then the footer strip's
+        // update pair, then the button row.
         customColorButton.TabIndex = 0;
         textBox.TabIndex = 1;
         idleCombo.TabIndex = 2;
-        checkUpdateButton.TabIndex = 3;
-        applyUpdateButton.TabIndex = 4;
-        resetButton.TabIndex = 5;
-        cancelButton.TabIndex = 6;
-        tryButton.TabIndex = 7;
-        saveButton.TabIndex = 8;
+        changeDataButton.TabIndex = 3;
+        checkUpdateButton.TabIndex = 4;
+        applyUpdateButton.TabIndex = 5;
+        resetButton.TabIndex = 6;
+        cancelButton.TabIndex = 7;
+        tryButton.TabIndex = 8;
+        saveButton.TabIndex = 9;
 
         // Theme switching: any WM_SETTINGCHANGE restarts the debounce; after it
         // settles, reread the registry and only reapply on a real change (V3).
@@ -203,6 +222,9 @@ internal sealed class SettingsDialog : Form
         Controls.Add(idleLabel);
         Controls.Add(idleCombo);
         Controls.Add(idleHintLabel);
+        Controls.Add(dataLabel);
+        Controls.Add(dataPathLabel);
+        Controls.Add(changeDataButton);
         Controls.Add(hintLabel);
         Controls.Add(versionLabel);
         Controls.Add(checkUpdateButton);
@@ -263,6 +285,11 @@ internal sealed class SettingsDialog : Form
         updateStatusLabel.Font = hintFont;
         checkUpdateButton.Font = hintFont;
         applyUpdateButton.Font = hintFont;
+        // Data location section (V10): Bold section label like its peers; the
+        // path line runs on the caption tier next to a compact change button.
+        dataLabel.Font = labelFont;
+        dataPathLabel.Font = hintFont;
+        changeDataButton.Font = hintFont;
         // Every layout number comes from SettingsDialogMetrics (D1): spacing
         // rungs, font ladder and structural sizes are declared there once; S()
         // per value is the only runtime derivation path.
@@ -292,6 +319,7 @@ internal sealed class SettingsDialog : Form
             + rowGap + swatchRow + groupGap
             + labelHeight + labelGap + textHeight
             + groupGap + labelHeight + labelGap + buttonRow + rowGap + hintHeight
+            + groupGap + labelHeight + labelGap + buttonRow
             + groupGap + hintHeight + groupGap + footerRow + groupGap
             + buttonRow + edge;
         int previewCap = current.WorkingArea.Height - (Height - ClientSize.Height) - fixedChrome;
@@ -337,6 +365,15 @@ internal sealed class SettingsDialog : Form
         y += buttonRow + rowGap;
         idleHintLabel.SetBounds(x, y, width, hintHeight);
         y += hintHeight + groupGap;
+        // Data location group (V10): section label, then the current-root
+        // line beside the change button - the button hugs the right edge like
+        // the footer apply slot, the path zone takes the rest and ellipsizes.
+        dataLabel.SetBounds(x, y, width, labelHeight);
+        y += labelHeight + labelGap;
+        int dataButton = S(SettingsDialogMetrics.DataChangeButtonWidthPx);
+        changeDataButton.SetBounds(x + width - dataButton, y, dataButton, buttonRow);
+        dataPathLabel.SetBounds(x, y, width - dataButton - labelGap, buttonRow);
+        y += buttonRow + groupGap;
         hintLabel.SetBounds(x, y, width, hintHeight);
         y += hintHeight + groupGap;
         // Update footer (B7): version line, check button, one-line status, and a
@@ -414,8 +451,13 @@ internal sealed class SettingsDialog : Form
         versionLabel.ForeColor = palette.TextSecondary;
         updateStatusLabel.BackColor = palette.Bg;
         updateStatusLabel.ForeColor = palette.TextSecondary;
+        dataLabel.BackColor = palette.Bg;
+        dataLabel.ForeColor = palette.Text;
+        dataPathLabel.BackColor = palette.Bg;
+        dataPathLabel.ForeColor = palette.TextSecondary;
         preview.SetFrameColor(palette.Border);
         ThemeButton(customColorButton, false);
+        ThemeButton(changeDataButton, false);
         ThemeButton(resetButton, false);
         ThemeButton(cancelButton, false);
         ThemeButton(saveButton, true);
@@ -665,11 +707,14 @@ internal sealed class SettingsDialog : Form
         Close();
     }
 
-    // ---- update footer wiring (B7) -----------------------------------------
+    // ---- update footer wiring (B7, V10 D1 predownload state machine) -------
     // Every network hop runs on the thread pool and results marshal back with
-    // Invoke; the settings window is the only code that ever goes online (U2).
-    // The silent check on load stays completely quiet unless a newer release
-    // exists - failures surface only through the manual button.
+    // Invoke; the settings window is the app's only code that ever goes online
+    // besides the mask's throttled check (U2 + its V10 relaxation). The silent
+    // check on load stays completely quiet unless a newer release exists -
+    // failures surface only through the manual button. A found release moves
+    // straight into the background predownload; "apply" lights up only when
+    // the verified artifact is staged (one-click instant install).
 
     private void SafeInvoke(MethodInvoker action)
     {
@@ -699,8 +744,14 @@ internal sealed class SettingsDialog : Form
                 if (found != null)
                 {
                     pendingUpdate = found;
-                    updateStatusLabel.Text = "发现新版 " + found.Tag;
+                    // A completed check that found something updates both
+                    // marks (D7): the mask can show its hint on the next
+                    // launch even if this window closes without updating.
+                    AppPaths.CompleteUpdateCheck(found.Tag);
+                    updateStatusLabel.Text = "发现新版 " + found.Tag + "，正在预下载…";
                     applyUpdateButton.Visible = true;
+                    applyUpdateButton.Enabled = false;
+                    BeginPreload(found);
                 }
                 else if (userAsked)
                 {
@@ -712,68 +763,167 @@ internal sealed class SettingsDialog : Form
         }, manual);
     }
 
-    private void BeginApplyUpdate()
+    // Background predownload (D1): the download cost hides here so the later
+    // "apply" click is instantaneous. Failure leaves the apply affordance
+    // visible but inert with the reason on the status line; the manual check
+    // button restarts the whole find-then-preload chain.
+    private void BeginPreload(Updater.UpdateInfo update)
     {
-        if (pendingUpdate == null) return;
-        Updater.UpdateInfo update = pendingUpdate;
-        checkUpdateButton.Enabled = false;
-        applyUpdateButton.Enabled = false;
-        updateStatusLabel.Text = "正在下载…";
         System.Threading.ThreadPool.QueueUserWorkItem(delegate
         {
-            string downloaded = null;
+            string staged = null;
             string failure = null;
             try
             {
-                downloaded = Updater.DownloadAndVerify(update, delegate(int percent)
+                staged = Updater.DownloadStaged(update, delegate(int percent)
                 {
                     SafeInvoke(delegate
                     {
-                        if (!IsDisposed) updateStatusLabel.Text = "正在下载… " + percent + "%";
+                        if (!IsDisposed) updateStatusLabel.Text = "正在预下载… " + percent + "%";
                     });
                 });
             }
             catch (Exception ex) { failure = ex.Message; }
-            if (downloaded == null)
-            {
-                SafeInvoke(delegate
-                {
-                    if (IsDisposed) return;
-                    updateStatusLabel.Text = "更新失败：" + failure;
-                    checkUpdateButton.Enabled = true;
-                    applyUpdateButton.Enabled = true;
-                });
-                return;
-            }
-            // The swap itself runs on the UI thread: the dialog cannot close
-            // mid-replace, so the running exe is never left half-copied (B6).
-            // The swap takes the machine-wide update mutex (V7S), so a second
-            // instance applying at the same moment waits briefly here - the
-            // install label keeps that wait readable instead of a bare freeze.
+            string stagedPath = staged;
             SafeInvoke(delegate
             {
                 if (IsDisposed) return;
-                updateStatusLabel.Text = "正在安装…";
-                try
+                if (stagedPath == null)
                 {
-                    Updater.ReplaceSequence(downloaded, Application.ExecutablePath);
-                }
-                catch (Exception ex)
-                {
-                    updateStatusLabel.Text = "更新失败：" + ex.Message;
-                    checkUpdateButton.Enabled = true;
-                    applyUpdateButton.Enabled = true;
+                    updateStatusLabel.Text = "预下载失败：" + failure;
                     return;
                 }
-                finally
-                {
-                    try { if (File.Exists(downloaded)) File.Delete(downloaded); } catch { }
-                }
-                MessageBox.Show("已更新到 " + update.Tag + "，关闭本窗口后双击主程序即运行新版。",
-                    "一键黑屏 · 设置", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                Close();
+                stagedUpdatePath = stagedPath;
+                applyUpdateButton.Enabled = true;
+                updateStatusLabel.Text = "新版 " + update.Tag + " 已就绪，可一键更新";
             });
         });
+    }
+
+    private void BeginApplyUpdate()
+    {
+        if (pendingUpdate == null || stagedUpdatePath == null) return;
+        Updater.UpdateInfo update = pendingUpdate;
+        string staged = stagedUpdatePath;
+        checkUpdateButton.Enabled = false;
+        applyUpdateButton.Enabled = false;
+        if (Updater.IsInstalledForm)
+        {
+            // Installed form (V10 D2): hand off to the silent Setup. Inno
+            // closes the app, reinstalls over the remembered directory and
+            // restarts the mask; this window just exits so the installer can
+            // take over - no dialog may outlive the swap it started.
+            updateStatusLabel.Text = "正在启动安装…";
+            try
+            {
+                Updater.LaunchSetup(staged);
+            }
+            catch (Exception ex)
+            {
+                updateStatusLabel.Text = "更新失败：" + ex.Message;
+                checkUpdateButton.Enabled = true;
+                applyUpdateButton.Enabled = true;
+                return;
+            }
+            AppPaths.CompleteUpdateCheck(null);
+            Close();
+            return;
+        }
+        // Portable form: the existing UI-thread swap chain, unchanged - the
+        // swap takes the machine-wide update mutex (V7S) so the dialog cannot
+        // close mid-replace (B6), and a concurrent second instance waits
+        // briefly inside; the install label keeps that wait readable.
+        updateStatusLabel.Text = "正在安装…";
+        try
+        {
+            Updater.ReplaceSequence(staged, Application.ExecutablePath);
+        }
+        catch (Exception ex)
+        {
+            updateStatusLabel.Text = "更新失败：" + ex.Message;
+            checkUpdateButton.Enabled = true;
+            applyUpdateButton.Enabled = true;
+            return;
+        }
+        finally
+        {
+            try { if (File.Exists(staged)) File.Delete(staged); } catch { }
+            try { if (Directory.Exists(Updater.StagingDirectory)) Directory.Delete(Updater.StagingDirectory, true); } catch { }
+        }
+        AppPaths.CompleteUpdateCheck(null);
+        MessageBox.Show("已更新到 " + update.Tag + "，关闭本窗口后双击主程序即运行新版。",
+            "一键黑屏 · 设置", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        Close();
+    }
+
+    // ---- data location wiring (V10 D3/D4) -----------------------------------
+    // Browse a parent directory -> preview old/new roots -> confirm -> the
+    // AppPaths migration pipeline (copy, verify, commit, guarded delete) ->
+    // restart note and close. The dialog deliberately ends with the window:
+    // the open dialog still edits the pre-migration ini, so staying open
+    // would invite a save back into the old root.
+    private void BeginDataLocationChange()
+    {
+        string parent;
+        using (FolderBrowserDialog browser = new FolderBrowserDialog())
+        {
+            browser.Description = "选择新数据文件夹所在的父目录（将在其中创建 BlackScreen 文件夹）";
+            string prefill = AppPaths.DataParentDirectory;
+            if (prefill.Length > 0 && Directory.Exists(prefill)) browser.SelectedPath = prefill;
+            if (browser.ShowDialog(this) != DialogResult.OK) return;
+            parent = browser.SelectedPath;
+        }
+        string newRoot;
+        try
+        {
+            newRoot = Path.GetFullPath(Path.Combine(parent, AppPaths.ManagedDirectoryName));
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show("所选路径无效：" + ex.Message, "一键黑屏 · 设置",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        if (!AppPaths.IsManagedDataRoot(newRoot))
+        {
+            MessageBox.Show("所选位置无法构成受管的数据目录（必须位于非根目录下的 BlackScreen 文件夹）。",
+                "一键黑屏 · 设置", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        string oldRoot = AppPaths.DataRoot;
+        if (string.CompareOrdinal(newRoot, Path.GetFullPath(oldRoot)) == 0)
+        {
+            MessageBox.Show("新位置与当前数据位置相同，无需迁移。", "一键黑屏 · 设置",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        StringBuilder preview = new StringBuilder();
+        preview.Append("旧位置：").Append(oldRoot)
+            .Append("\n新位置：").Append(newRoot)
+            .Append("\n\n将复制现有设置文件并逐字节校验，完成后重启程序生效。");
+        if (File.Exists(Path.Combine(newRoot, AppPaths.SettingsFileName)))
+            preview.Append("\n注意：目标位置已存在设置文件，将被覆盖。");
+        if (MessageBox.Show(preview.ToString(), "一键黑屏 · 迁移数据位置",
+            MessageBoxButtons.OKCancel, MessageBoxIcon.Information, MessageBoxDefaultButton.Button2)
+            != DialogResult.OK) return;
+        AppPaths.MigrationOutcome outcome;
+        try
+        {
+            outcome = AppPaths.MigrateDataRoot(newRoot);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show("迁移失败：" + ex.Message + "\n原数据未改动，可重试。",
+                "一键黑屏 · 设置", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        StringBuilder done = new StringBuilder();
+        done.Append("数据已迁移到：\n").Append(newRoot).Append("\n重启程序后生效。");
+        if (!outcome.OldRootRemoved)
+            done.Append("\n\n旧目录未能自动删除，请确认内容后手动删除：\n").Append(outcome.OldRootPath);
+        MessageBox.Show(done.ToString(), "一键黑屏 · 设置", MessageBoxButtons.OK,
+            outcome.OldRootRemoved ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+        Close();
     }
 
     // Keeps the per-minute scheduled task in step with the saved idle setting

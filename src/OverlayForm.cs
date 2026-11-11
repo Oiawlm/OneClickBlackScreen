@@ -36,10 +36,12 @@ internal static class NativeMethods
 internal sealed class OverlayForm : Form
 {
     private readonly OverlayGroup owner;
+    private readonly string updateHint;
 
-    public OverlayForm(Screen screen, MaskConfig config, OverlayGroup owner)
+    public OverlayForm(Screen screen, MaskConfig config, OverlayGroup owner, string updateHint)
     {
         this.owner = owner;
+        this.updateHint = updateHint;
         Text = "BlackScreen - click or press any key to exit";
         BackColor = config.MaskColor;
         FormBorderStyle = FormBorderStyle.None;
@@ -57,6 +59,37 @@ internal sealed class OverlayForm : Form
     {
         base.OnPaint(e);
         MaskPainter.DrawText(e.Graphics, ClientRectangle, owner.Config);
+        PaintUpdateHint(e.Graphics, ClientRectangle, updateHint, owner.Config.MaskColor);
+    }
+
+    // V10 D8: the low-key "new version available" line in the bottom-right
+    // corner - pure display, never part of the exit logic, fixed for the
+    // mask's lifetime (the tag is read once at start). Static and stateless
+    // so the offline verifier can inject a tag straight into the painter and
+    // assert the rendering without launching anything.
+    internal static void PaintUpdateHint(Graphics graphics, Rectangle area, string hint, Color background)
+    {
+        if (string.IsNullOrEmpty(hint) || area.Width <= 0 || area.Height <= 0) return;
+        using (StringFormat format = new StringFormat())
+        {
+            format.Alignment = StringAlignment.Near;
+            format.LineAlignment = StringAlignment.Far;
+            // Small on purpose: a fraction of the mask-text size, floored at
+            // the painter's minimum, keeps the line low-key at every DPI.
+            float size = Math.Max(12f, area.Height / 60f);
+            using (Font font = new Font(MaskPainter.SharedFamily, size, FontStyle.Regular, GraphicsUnit.Pixel))
+            using (SolidBrush brush = new SolidBrush(MaskPainter.PickTextColor(background)))
+            {
+                SizeF measured = graphics.MeasureString(hint, font, area.Size, format);
+                float pad = size; // one em of clearance keeps the exact corner clean
+                RectangleF hintArea = new RectangleF(
+                    area.Right - measured.Width - pad,
+                    area.Bottom - measured.Height - pad,
+                    measured.Width + pad, measured.Height + pad);
+                graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+                graphics.DrawString(hint, font, brush, hintArea, format);
+            }
+        }
     }
 
     protected override void OnShown(EventArgs e)
@@ -125,7 +158,7 @@ internal sealed class OverlayGroup : ApplicationContext
     private readonly bool[] keyLatched = new bool[255]; // VK-indexed exit latch
     private readonly int[] keyHeldTicks = new int[255]; // consecutive beats held down
 
-    public OverlayGroup(MaskConfig config)
+    public OverlayGroup(MaskConfig config, string updateHint)
     {
         this.config = config;
         keyboardCallback = OnKeyboard;
@@ -140,7 +173,7 @@ internal sealed class OverlayGroup : ApplicationContext
             Screen[] screens = Screen.AllScreens;
             forms = new OverlayForm[screens.Length];
             for (int i = 0; i < forms.Length; i++)
-                forms[i] = new OverlayForm(screens[i], config, this);
+                forms[i] = new OverlayForm(screens[i], config, this, updateHint);
             openCount = forms.Length;
             for (int i = 0; i < forms.Length; i++)
                 forms[i].Show();

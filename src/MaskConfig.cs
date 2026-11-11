@@ -42,12 +42,15 @@ internal sealed class MaskConfig
         IdleMinutes = ClampIdleMinutes(idleMinutes);
     }
 
+    // The ini location resolves through the AppPaths single point (V10 D3):
+    // the registered data root when it carries the managed shape, otherwise
+    // the %LOCALAPPDATA% default. The direct LocalApplicationData concat
+    // lives in AppPaths and nowhere else.
     public static string SettingsPath
     {
         get
         {
-            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "BlackScreen", "settings.ini");
+            return AppPaths.SettingsIniPath;
         }
     }
 

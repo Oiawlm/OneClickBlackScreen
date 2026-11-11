@@ -58,5 +58,13 @@ internal static class SettingsDialogMetrics
     // (one caption line, ellipsized overflow); the apply button's slot is fixed
     // so revealing it never shifts any other control (constant geometry).
 
+    // Data location section (V10 D3/D4): section label row, then one row with
+    // the current root path (caption tier, ellipsized) beside the change
+    // button. The button reuses the 80 tier like the footer buttons; the path
+    // line takes the remaining 408-80-8=320 and the row rides ButtonRowHeightPx
+    // so it aligns with the idle combo tier. No new rungs, no new fonts.
+    public const int DataChangeButtonWidthPx = 80;
+    // Row budget: 320 + 8 + 80 = 408 (path zone ellipsizes long roots).
+
     public const int PreviewFloorPx = 60;     // preview cap floor (v1 on)
 }
