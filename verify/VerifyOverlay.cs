@@ -250,6 +250,51 @@ internal static class VerifyOverlay
         }
     }
 
+    // Renders the hint painter into a bitmap and asserts the two injected
+    // states: tagged = pixels land in the bottom-right quadrant and only
+    // there; untagged = the whole area stays the pure background color.
+    private static void CheckUpdateHintPaint()
+    {
+        const int Width = 600, Height = 400;
+        Color background = Color.FromArgb(0x1A, 0x2B, 0x3C);
+        int hintPixels = 0, strayPixels = 0, centerHits = 0;
+        using (Bitmap bitmap = new Bitmap(Width, Height))
+        {
+            using (Graphics graphics = Graphics.FromImage(bitmap))
+            {
+                graphics.Clear(background);
+                OverlayForm.PaintUpdateHint(graphics, new Rectangle(0, 0, Width, Height),
+                    "检测到新版本 v9.9.9", background);
+            }
+            for (int x = 0; x < Width; x += 2)
+                for (int y = 0; y < Height; y += 2)
+                {
+                    if (bitmap.GetPixel(x, y).ToArgb() == background.ToArgb()) continue;
+                    bool inCorner = x >= Width / 2 && y >= Height / 2;
+                    bool inCenter = x >= Width / 3 && x < Width * 2 / 3 && y >= Height / 3 && y < Height * 2 / 3;
+                    if (inCorner) hintPixels++;
+                    else if (inCenter) centerHits++;
+                    else strayPixels++;
+                }
+        }
+        Check(hintPixels > 0, "the tagged hint painted nothing in the bottom-right quadrant");
+        Check(centerHits == 0, "the hint bled into the central text region");
+        Check(strayPixels == 0, "the hint painted outside the bottom-right quadrant");
+        using (Bitmap clean = new Bitmap(Width, Height))
+        {
+            using (Graphics graphics = Graphics.FromImage(clean))
+            {
+                graphics.Clear(background);
+                OverlayForm.PaintUpdateHint(graphics, new Rectangle(0, 0, Width, Height), null, background);
+            }
+            for (int x = 0; x < Width; x += 2)
+                for (int y = 0; y < Height; y += 2)
+                    Check(clean.GetPixel(x, y).ToArgb() == background.ToArgb(),
+                        "the untagged hint must paint absolutely nothing");
+        }
+        Console.WriteLine("PASS I: update hint line - tagged paints the bottom-right quadrant only, untagged paints nothing");
+    }
+
     [STAThread]
     private static int Main(string[] args)
     {
@@ -447,6 +492,15 @@ internal static class VerifyOverlay
                     }
                 }
                 finally { keybd_event(0x1B, 0, 2, UIntPtr.Zero); } // clear the phantom on every path
+
+                // I. Update hint line (V10 D8): state injected straight into the
+                //    painter seam - a tag paints a low-key line in the
+                //    bottom-right corner only, and no tag paints nothing at all.
+                //    The line is pure display by construction (never part of the
+                //    exit logic), and the one-em corner padding keeps the exact
+                //    corner pixels clean so the unmarked end-to-end mask above
+                //    (A/B/C corner samples) stays the no-hint proof.
+                CheckUpdateHintPaint();
 
                 Check(maxIdleMs <= 2000, "InputIdle exceeded budget");
                 Check(Sha256HexOrNull(realIni) == realShaBefore,

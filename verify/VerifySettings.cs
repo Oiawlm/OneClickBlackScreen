@@ -15,8 +15,9 @@ using System.Threading;
 // colors and layout values stay single-sourced, while the layout algorithm is
 // mirrored here as the observer side of the mirror-lock test (D3, check 6).
 // Since v5 the mirror also covers the idle auto-wake group (V5C) and the
-// update footer (V5B): 24 direct children, and the status static is matched
-// by elimination because its text depends on the live silent check.
+// update footer (V5B); since v10 the data location section joins (V10 D4):
+// 27 direct children, and the status static is matched by elimination because
+// its text depends on the live silent check.
 internal static class VerifySettings
 {
     private const int WM_CLOSE = 0x0010;
@@ -266,10 +267,12 @@ internal static class VerifySettings
                 int customLift = Scaled(SettingsDialogMetrics.CustomButtonLiftPx, scale);
                 int previewHeight = (int)Math.Round(width * (double)primaryScreen.Height / primaryScreen.Width);
                 int comboWidth = Scaled(SettingsDialogMetrics.IdleComboWidthPx, scale);
+                int dataButtonWidth = Scaled(SettingsDialogMetrics.DataChangeButtonWidthPx, scale);
                 int fixedChrome = edge + labelHeight + labelGap
                     + rowGap + swatchRow + groupGap
                     + labelHeight + labelGap + textHeight
                     + groupGap + labelHeight + labelGap + buttonRow + rowGap + hintHeight
+                    + groupGap + labelHeight + labelGap + buttonRow
                     + groupGap + hintHeight + groupGap + footerRow + groupGap
                     + buttonRow + edge;
                 int previewCap = current.WorkingArea.Height - nonClient - fixedChrome;
@@ -302,6 +305,13 @@ internal static class VerifySettings
                 y += buttonRow + rowGap;
                 expected.Add("idle hint", new int[] { x, y, width, hintHeight });
                 y += hintHeight + groupGap;
+                // Data location group (V10): label, then the current-root
+                // path line beside the right-hugging change button.
+                expected.Add("data label", new int[] { x, y, width, labelHeight });
+                y += labelHeight + labelGap;
+                expected.Add("data path", new int[] { x, y, width - dataButtonWidth - labelGap, buttonRow });
+                expected.Add("change data", new int[] { x + width - dataButtonWidth, y, dataButtonWidth, buttonRow });
+                y += buttonRow + groupGap;
                 expected.Add("hint label", new int[] { x, y, width, hintHeight });
                 y += hintHeight + groupGap;
                 // Update footer (V5B): same formula as LayOutControls; the apply
@@ -557,6 +567,7 @@ internal static class VerifySettings
             if (child.Text == "保存") return "save";
             if (child.Text == "检查更新") return "check";
             if (child.Text == "立即更新") return "apply";
+            if (child.Text == "更改…") return "change data";
             return "button?'" + Truncate(child.Text) + "'";
         }
         if (IsStaticClass(child.Class))
@@ -564,6 +575,8 @@ internal static class VerifySettings
             if (child.Text.StartsWith("遮罩颜色")) return "color label";
             if (child.Text.StartsWith("遮罩文字")) return "text label";
             if (child.Text.StartsWith("自动唤起")) return "idle label";
+            if (child.Text.StartsWith("数据位置")) return "data label";
+            if (child.Text.StartsWith("当前：")) return "data path";
             if (child.Text.StartsWith("最多")) return "text hint";
             if (child.Text.StartsWith("无操作")) return "idle hint";
             if (child.Text.StartsWith("配置文件")) return "hint label";
