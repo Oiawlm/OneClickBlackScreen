@@ -99,3 +99,11 @@
 | 预下载暂存 | `%TEMP%\BlackScreenUpdate\`，先清旧再落 | Updater 暂存管理 | 不触碰 |
 | 形状判定同构 | 「以 `\BlackScreen` 结尾＋非根」两侧逐字同实现 | AppPaths 内 | IsManagedDataDirectory 内；R 轨对照 |
 | 测试变体隔离 | `/DTestId` 测试 AppId（现有 D5 机制）＋数据键加 `-TEST` 后缀 | VerifyPaths 键名后缀 | 自测数据页/卸载断言走测试键 |
+
+## 8. 调研来源附录（核心 18 条；fts 侧证据在其仓库文件行号，见 §2.2）
+
+- GitHub API 限流/条件请求/releases-latest：docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api；…/best-practices-for-using-the-rest-api；…/rest/releases/releases；github.com/community/community/discussions/24532
+- Inno Setup 官方：jrsoftware.org/ishelp/topic_setupcmdline.htm（/VERYSILENT //SUPPRESSMSGBOXES //NORESTART 语义）；…/topic_setup_closeapplications.htm；…/topic_setup_appid.htm（同 AppId 覆盖装）；…/topic_setup_usepreviousappdir.htm；…/topic_registrysection.htm（uninsdeletevalue）；…/topic_scriptevents.htm（CurUninstallStepChanged）；…/topic_uninstalldeletesection.htm（无条件删除警示）；jrsoftware.org/isfaq.php（覆盖优于卸旧再装）；github.com/HeliumProject/InnoSetup/blob/master/Examples/UninstallCodeExample1.iss（官方卸载示例）
+- 更新框架对比：github.com/ravibpatel/AutoUpdater.NET；github.com/velopack/velopack；github.com/vslavik/winsparkle；github.com/Squirrel/Squirrel.Windows（失修排除）
+- 目录/portable 惯例：code.visualstudio.com/docs/setup/portable；superuser.com/questions/1827168；advancedinstaller.com/appdata-localappdata-programdata.html
+- 社区共识：news.ycombinator.com/item?id=41474419（提示优于强制）；reddit.com/r/Windows11/comments/1qshxpa（卸载残留讨论）
