@@ -326,20 +326,25 @@ end;
 
 function IsManagedDataDirectory(const Value: String): Boolean;
 var
+  Raw: String;
   Normalized: String;
   DataParent: String;
 begin
   // Frozen §7 shape, identical to the app side's AppPaths judgment: a fully
   // qualified path whose leaf is exactly "BlackScreen" and whose selected
   // parent is neither a drive nor a share root ("C:\BlackScreen" is
-  // rejected - data must live inside a real parent directory). Deletion and
-  // registration both hinge on this single predicate.
+  // rejected - data must live inside a real parent directory). The raw
+  // trimmed value itself must end in \BlackScreen - normalization only
+  // canonicalizes for the parent checks and never rescues a malformed
+  // registration (a trailing separator stays rejected, app-side isomorphic).
+  // Deletion and registration both hinge on this single predicate.
   Result := False;
-  if not IsFullyQualifiedPath(Value) then
+  Raw := Trim(Value);
+  if not IsFullyQualifiedPath(Raw) then
     Exit;
-  Normalized := NormalizeDirectory(Value);
-  if CompareText(ExtractFileName(Normalized), ManagedRootLeaf) <> 0 then
+  if CompareText(ExtractFileName(Raw), ManagedRootLeaf) <> 0 then
     Exit;
+  Normalized := NormalizeDirectory(Raw);
   DataParent := GetManagedDataParent(Normalized);
   if (DataParent = '') or IsRootDirectory(DataParent) then
     Exit;

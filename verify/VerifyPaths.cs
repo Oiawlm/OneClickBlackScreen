@@ -84,8 +84,9 @@ internal static class VerifyPaths
     private static void CheckManagedShapeMatrix()
     {
         Check(AppPaths.IsManagedDataRoot(@"D:\App\BlackScreen"), "deep parent + BlackScreen must pass");
-        Check(AppPaths.IsManagedDataRoot(@"D:\BlackScreen"), "drive root parent + BlackScreen must pass");
-        Check(AppPaths.IsManagedDataRoot(@"\\server\share\BlackScreen"), "UNC share parent + BlackScreen must pass");
+        Check(!AppPaths.IsManagedDataRoot(@"D:\BlackScreen"), "a drive root parent must fail - data lives under a real parent directory");
+        Check(!AppPaths.IsManagedDataRoot(@"\\server\share\BlackScreen"), "a UNC share root parent must fail - data lives under a real parent directory");
+        Check(!AppPaths.IsManagedDataRoot(@"\BlackScreen"), "a drive-less rooted path must fail - the registration must be fully qualified");
         Check(AppPaths.IsManagedDataRoot("d:\\app\\blackscreen"), "suffix match must be case-insensitive");
         Check(!AppPaths.IsManagedDataRoot(@"D:\"), "a drive root must fail");
         Check(!AppPaths.IsManagedDataRoot(@"D:\BlackScreenX"), "a longer leaf name must fail");
@@ -95,7 +96,7 @@ internal static class VerifyPaths
         Check(!AppPaths.IsManagedDataRoot(null), "null must fail");
         Check(AppPaths.IsManagedDataRoot(@"D:\App\BlackScreen "),
             "surrounding whitespace is trimmed, so the shape still passes");
-        Console.WriteLine("PASS: managed shape matrix (suffix \\BlackScreen, case-insensitive, non-root, no trailing separator)");
+        Console.WriteLine("PASS: managed shape matrix (suffix \\BlackScreen, case-insensitive, parent non-root, fully qualified, no trailing separator)");
     }
 
     // ---- 2. the resolver matrix (D3) ----------------------------------------

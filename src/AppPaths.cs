@@ -92,17 +92,20 @@ internal static class AppPaths
     }
 
     // The managed shape (frozen contract, B side mirrors this logic
-    // byte-for-byte in its own IsManagedDataDirectory): the path must end in
-    // "\BlackScreen" (case-insensitive, no trailing separator) and must not
-    // itself be a filesystem root - only a root ("D:\", a UNC share root)
-    // has no parent directory entry.
+    // byte-for-byte in its own IsManagedDataDirectory): a fully qualified
+    // path ending in "\BlackScreen" (case-insensitive, no trailing
+    // separator) whose parent is a real directory - not a drive root, not a
+    // UNC share root, and not the current drive's root (a drive-less
+    // "\BlackScreen" fails the parent==root check below).
     public static bool IsManagedDataRoot(string path)
     {
         if (path == null) return false;
         string trimmed = path.Trim();
         if (trimmed.Length == 0) return false;
         if (!trimmed.EndsWith("\\" + ManagedDirectoryName, StringComparison.OrdinalIgnoreCase)) return false;
-        return Path.GetDirectoryName(trimmed) != null;
+        string parent = Path.GetDirectoryName(trimmed);
+        if (string.IsNullOrEmpty(parent)) return false;
+        return !string.Equals(parent, Path.GetPathRoot(parent), StringComparison.OrdinalIgnoreCase);
     }
 
     public static string DefaultDataRoot
