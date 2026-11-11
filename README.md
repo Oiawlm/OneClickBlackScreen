@@ -128,7 +128,7 @@ verify.cmd
 | 文档 | 内容 |
 |---|---|
 | [docs/handoff/archive/](docs/handoff/archive/) | V1~V8 历史轮次文档原样归档（RESEARCH/PLAN/GOAL/VERIFY/REVIEW 等，只读；V8 批次整目录在 archive\2026-11-05-v8-structure\） |
-| [docs/handoff/2026-11-05-v9-installer/](docs/handoff/2026-11-05-v9-installer/) | 当前批次（v9 轮）：本轮 RESEARCH/PLAN/GOAL 与执行窗 VERIFY 证据 |
+| [docs/handoff/archive/2026-11-05-v9-installer/](docs/handoff/archive/2026-11-05-v9-installer/) | 当前批次（v9 轮）：本轮 RESEARCH/PLAN/GOAL 与执行窗 VERIFY 证据 |
 | [docs/lessons.md](docs/lessons.md) | 坑库：跨轮踩坑汇总（现象→根因→正解→出处） |
 | [docs/multi-window.md](docs/multi-window.md) | 多窗口并行规程：worktree 创建/推送/清理模板与写权归属 |
 | [AGENTS.md](AGENTS.md) | 多窗口协作契约：独占资源、单一写者、冻结区与红线（各 AI 窗口自动注入） |
