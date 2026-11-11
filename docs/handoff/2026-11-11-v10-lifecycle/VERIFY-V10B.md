@@ -94,6 +94,19 @@ unins000.exe /VERYSILENT /SUPPRESSMSGBOXES /LOG=…\uninst4b.log → UNINST_EXIT
 uninst4b.log 末行：Uninstallation process succeeded. / Removed all? Yes / Need to restart Windows? No
 ```
 
+### ④c 登记值形状非法→拒删数据＋保留登记（P3 第二守卫面，补强实测）
+
+```
+重装测试件→预置登记（Parent1）→重跑（受管根+settings.ini 就绪）→把 DataDirectory 篡改为 D:\NotManagedRoot（非法形状）
+unins000.exe /VERYSILENT /SUPPRESSMSGBOXES → 弹出「无法安全删除已登记的数据目录…个人设置数据与登记值已保留，请手动清理」
+  ← 普通 MsgBox 有意不可抑制（fts 同构：安全错误必须人见；测试以编程方式点掉继续）
+UNINST_EXIT=0
+[4c-1] Install/ 目录消失   ← 程序卸载照常进行
+[4c-2] …\Parent1\BlackScreen\settings.ini 原样保留   ← 形状守卫拒绝一切数据删除（登记不可信即保守不动）
+[4c-3] 篡改值 DataDirectory=D:\NotManagedRoot 与 DataParentDirectory 均保留   ← 「保留登记」实证
+uninst4c.log 末行：Uninstallation process succeeded. / Removed all? Yes
+```
+
 ### 事故记录（程序性，非 .iss 缺陷）
 
 1. 首次 ④b 用 `unins000.exe /VERYSILENT`（未带 `/SUPPRESSMSGBOXES`）→ 挂起：**Inno 卸载器在 /VERYSILENT 下仍弹启动确认框**（官方文档 topic_uninstcmdline：确认框仅受 /SUPPRESSMSGBOXES 抑制），第二阶段阻塞于不可见确认框。改用 `/VERYSILENT /SUPPRESSMSGBOXES` 即秒过。V9B 惯例同款参数。
@@ -146,7 +159,7 @@ uninst4b.log 末行：Uninstallation process succeeded. / Removed all? Yes / Nee
 
 ## 7. 移交注记（R/I 轨）
 
-- **卸载器静默参数**：`unins000.exe /VERYSILENT` 单用仍弹确认框（官方 topic_uninstcmdline），全静默必须 `/VERYSILENT /SUPPRESSMSGBOXES`；`/LOG=` 路径必须是 Windows 形态，创建失败即 exit 1 中止（§2 事故记录）。I 轨真机冒烟与 A 轨文档（使用说明如涉及）按此口径。
+- **卸载器静默参数**：`unins000.exe /VERYSILENT` 单用仍弹确认框（官方 topic_uninstcmdline），全静默必须 `/VERYSILENT /SUPPRESSMSGBOXES`；`/LOG=` 路径必须是 Windows 形态，创建失败即 exit 1 中止（§2 事故记录）。**另一处有意不可抑制**：登记值形状非法时 InitializeUninstall 用普通 MsgBox（④c 实测）——静默卸载遇篡改登记会暂停等人确认，属保守安全设计，I 轨冒烟遇之勿判缺陷。I 轨真机冒烟与 A 轨文档（使用说明如涉及）按此口径。
 - **taskkill 实机行为**：ForceCloseRunningApplication 仅在 `Local\BlackScreen.Mask` 被持有时 `taskkill /F /IM 一键黑屏.exe`（中文映像名经引号包裹）；本轨隔离自测无法安全演练真实遮罩（启全屏遮罩＝全局副作用，属验证闸门域），机制与 fts .iss:751-774 逐行同构。**留 I 轨**：真机跑遮罩→跑 Setup 静默更新→断言遮罩被杀→装完自动重启（[Run] 无 skipifsilent）。
 - **Inno 7.1.1 实测边角**：[Files] 覆盖复制保留源 mtime（刷新断言须用内容/删除-恢复法，勿依赖 mtime）；卸载器 [UninstallRun] 先于 usUninstall 执行（日志实证）；[Registry] uninsdeletevalue 于卸载收尾清值。
 - **留 I 轨真机冒烟场景清单**：①全新交互安装（数据位置页默认→零登记）；②向导改数据父目录→登记＋目录创建→设置窗迁移管线接力；③真实更新链（遮罩提示→设置窗预下载→立即更新→Setup 静默重装→[Run] 自动重启遮罩→版本/数据无损）；④无登记状态卸载（默认数据根被删、真实 settings.ini 消亡——知情文案已载 ConfirmUninstall）；⑤旧位置残留卸载器拒载实机复演；⑥自定义安装目录后 ARP/快捷方式/卸载全生命周期。
