@@ -34,9 +34,16 @@ internal static class Program
                 catch (AbandonedMutexException) { owned = true; }
                 if (!owned) return 0;
                 MaskConfig config = MaskConfig.Load();
+                // Update awareness (V10 D7/D8), two strictly separate layers:
+                // the display decision reads only the local UpdateAvailable
+                // mark (always succeeds, offline-safe, fixed for this mask's
+                // lifetime), while the throttled network check runs on a
+                // background thread and never blocks the mask from showing.
+                string updateHint = ReadUpdateHintTag();
+                BeginThrottledUpdateCheck();
                 try
                 {
-                    using (OverlayGroup group = new OverlayGroup(config))
+                    using (OverlayGroup group = new OverlayGroup(config, updateHint))
                         Application.Run(group);
                 }
                 catch
@@ -51,6 +58,42 @@ internal static class Program
             }
         }
     }
+
+    // The hint shows the registered tag only while it reads as newer than the
+    // running build - anything stale, malformed or absent stays invisible
+    // (fail-closed like every other tag decision, B2).
+    private static string ReadUpdateHintTag()
+    {
+        string tag = AppPaths.UpdateAvailableTag();
+        if (tag != null && AppInfo.IsNewer(tag, AppInfo.CurrentVersion()))
+            return "检测到新版本 " + tag;
+        return null;
+    }
+
+    // One silent check per day at most (D7): due only when a previous
+    // completed check stamped the throttle clock at least 24h ago. The whole
+    // body is failure-silent on purpose - a dead network, a 403 or a bad
+    // payload leaves both marks untouched and the mask unaffected (U2
+    // relaxation: this is the mask process's single throttled GET).
+    private static void BeginThrottledUpdateCheck()
+    {
+        if (!AppPaths.IsUpdateCheckDue(DateTime.UtcNow)) return;
+        ThreadPool.QueueUserWorkItem(delegate
+        {
+            try
+            {
+                Updater.UpdateInfo found = Updater.Check(AppInfo.UpdateApiBase, OverlayCheckTimeoutMs);
+                AppPaths.CompleteUpdateCheck(found == null ? null : found.Tag);
+            }
+            catch
+            {
+            }
+        });
+    }
+
+    // Short patience for the overlay's background check (D7): about three
+    // seconds keeps a wedged network from keeping the thread pool busy.
+    private const int OverlayCheckTimeoutMs = 3000;
 
     // Scheduled per-minute self check (V5C/C2): exit silently while the feature
     // is off or the session is still active, hand off to the shared overlay path

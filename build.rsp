@@ -10,6 +10,7 @@
 -out:dist\一键黑屏.exe
 src\Program.cs
 src\AppInfo.cs
+src\AppPaths.cs
 src\MaskConfig.cs
 src\IdleWake.cs
 src\MaskPainter.cs

@@ -17,13 +17,13 @@ if not defined TARGET (
 set "BIN=%REPO%verify\bin"
 if not exist "%BIN%" mkdir "%BIN%"
 pushd "%REPO%"
-"%CSC%" -nologo -target:exe -optimize+ -langversion:5 -r:System.dll -r:System.Drawing.dll -out:verify\bin\VerifyConfig.exe verify\VerifyConfig.cs verify\VerifyGate.cs src\MaskConfig.cs
+"%CSC%" -nologo -target:exe -optimize+ -langversion:5 -r:System.dll -r:System.Drawing.dll -out:verify\bin\VerifyConfig.exe verify\VerifyConfig.cs verify\VerifyGate.cs src\MaskConfig.cs src\AppPaths.cs
 if errorlevel 1 goto :failbuild
 "%CSC%" -nologo -target:exe -optimize+ -langversion:5 -r:System.dll -r:System.Drawing.dll -r:System.Windows.Forms.dll -out:verify\bin\VerifySettings.exe verify\VerifySettings.cs verify\VerifyGate.cs src\ThemePalette.cs src\SettingsDialogMetrics.cs
 if errorlevel 1 goto :failbuild
 "%CSC%" -nologo -target:exe -optimize+ -langversion:5 -r:System.dll -r:System.Drawing.dll -r:System.Windows.Forms.dll -out:verify\bin\VerifyMouseExit.exe verify\VerifyMouseExit.cs verify\VerifyGate.cs
 if errorlevel 1 goto :failbuild
-"%CSC%" -nologo -target:exe -optimize+ -langversion:5 -r:System.dll -r:System.Drawing.dll -r:System.Windows.Forms.dll -out:verify\bin\VerifyOverlay.exe verify\VerifyOverlay.cs verify\VerifyGate.cs
+"%CSC%" -nologo -target:exe -optimize+ -langversion:5 -r:System.dll -r:System.Drawing.dll -r:System.Windows.Forms.dll -out:verify\bin\VerifyOverlay.exe verify\VerifyOverlay.cs verify\VerifyGate.cs src\OverlayForm.cs src\MaskPainter.cs src\MaskConfig.cs src\AppPaths.cs
 if errorlevel 1 goto :failbuild
 "%CSC%" -nologo -target:exe -optimize+ -langversion:5 -r:System.dll -r:System.Drawing.dll -out:verify\bin\VerifyIcon.exe verify\VerifyIcon.cs verify\VerifyGate.cs
 if errorlevel 1 goto :failbuild
@@ -31,34 +31,40 @@ if errorlevel 1 goto :failbuild
 if errorlevel 1 goto :failbuild
 "%CSC%" -nologo -target:exe -optimize+ -langversion:5 -r:System.dll -out:verify\bin\VerifyIdle.exe verify\VerifyIdle.cs verify\VerifyGate.cs src\IdleWake.cs
 if errorlevel 1 goto :failbuild
+"%CSC%" -nologo -target:exe -optimize+ -langversion:5 -r:System.dll -out:verify\bin\VerifyPaths.exe verify\VerifyPaths.cs verify\VerifyGate.cs src\AppPaths.cs
+if errorlevel 1 goto :failbuild
 popd
 
-echo [1/7] VerifyConfig
+echo [1/8] VerifyConfig
 "%BIN%\VerifyConfig.exe"
 if errorlevel 2 goto :busy
 if errorlevel 1 goto :fail
-echo [2/7] VerifySettings
+echo [2/8] VerifySettings
 "%BIN%\VerifySettings.exe" "%TARGET%"
 if errorlevel 2 goto :busy
 if errorlevel 1 goto :fail
-echo [3/7] VerifyMouseExit
+echo [3/8] VerifyMouseExit
 "%BIN%\VerifyMouseExit.exe" "%TARGET%"
 if errorlevel 2 goto :busy
 if errorlevel 1 goto :fail
-echo [4/7] VerifyOverlay
+echo [4/8] VerifyOverlay
 "%BIN%\VerifyOverlay.exe" "%TARGET%"
 if errorlevel 2 goto :busy
 if errorlevel 1 goto :fail
-echo [5/7] VerifyIcon
+echo [5/8] VerifyIcon
 "%BIN%\VerifyIcon.exe" "%TARGET%"
 if errorlevel 2 goto :busy
 if errorlevel 1 goto :fail
-echo [6/7] VerifyUpdate
+echo [6/8] VerifyUpdate
 "%BIN%\VerifyUpdate.exe"
 if errorlevel 2 goto :busy
 if errorlevel 1 goto :fail
-echo [7/7] VerifyIdle
+echo [7/8] VerifyIdle
 "%BIN%\VerifyIdle.exe" "%TARGET%"
+if errorlevel 2 goto :busy
+if errorlevel 1 goto :fail
+echo [8/8] VerifyPaths
+"%BIN%\VerifyPaths.exe"
 if errorlevel 2 goto :busy
 if errorlevel 1 goto :fail
 echo [OK] ALL VERIFIERS PASSED
