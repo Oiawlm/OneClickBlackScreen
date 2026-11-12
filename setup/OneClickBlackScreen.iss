@@ -1,6 +1,9 @@
 ﻿; OneClickBlackScreen per-user installer script (V9 B-track, RESEARCH-V9 §3 D2;
 ; V10 B-track: silent-update relaunch, data-location wizard page, install
-; ownership registration and full uninstall, RESEARCH-V10 §3 D2/D4-D6 + §7).
+; ownership registration and full uninstall, RESEARCH-V10 §3 D2/D4-D6 + §7;
+; V11 B-track: dual-exe payload with a parameter-free settings shortcut,
+; install-time .old sweep, full five-value + empty-key uninstall cleanup and
+; a preprocessor-redirectable default data root, RESEARCH-V11 D2/D5/D10 + §7).
 ; Build via build-setup.cmd: it extracts the version from src\AppInfo.cs and
 ; passes /DAppVersion=<x.y.z>; this script refuses to compile without it, so
 ; the version stays single-sourced (D4 - never hand-write a version here).
@@ -33,11 +36,16 @@
 ; Single-sourced names shared by directives and [Code] (V10): the installed
 ; exe name (taskkill target, [Run] relaunch, icons) and the app's existing
 ; single-instance mutex (Program.cs:28) used by both AppMutex and the
-; force-close probe. DataRegistryRoot carries the frozen HKCU key root of
-; the cross-track contract (RESEARCH-V10 §7 row 1); isolation builds append
-; "-TEST" so the whole data-registration surface (InstallDirectory /
-; DataDirectory / DataParentDirectory) is disjoint from the real one.
+; force-close probe. V11 adds the settings exe name (D2: dual-exe payload,
+; RESEARCH-V11 §7 rows 4/5 - the build must emit exactly this file). Only
+; the mask exe is mutex-checked/taskkilled/relaunched; the settings exe is
+; launched straight from its dedicated shortcut and may run alongside.
+; DataRegistryRoot carries the frozen HKCU key root of the cross-track
+; contract (RESEARCH-V11 §7 row 6); isolation builds append "-TEST" so the
+; whole data-registration surface (InstallDirectory / DataDirectory /
+; DataParentDirectory / LastUpdateCheck / UpdateAvailable) is disjoint.
 #define AppExeName "一键黑屏.exe"
+#define AppSettingsExeName "一键黑屏-设置.exe"
 #define AppMutexName "Local\BlackScreen.Mask"
 
 #ifdef TestId
@@ -52,6 +60,21 @@
   ; uninstaller only sweeps it if still registered on this machine.
   #define IdleTaskName "OneClickBlackScreen-Idle"
   #define DataRegistryRoot "Software\BlackScreen"
+#endif
+
+; Default data root (RESEARCH-V11 D10): production compiles the frozen
+; per-user location below. Isolation builds MUST redirect it via
+; /DDefaultDataRoot=<isolated path ending in \BlackScreen> - the #error makes
+; a test build against the real default root impossible to compile, while the
+; default-root code paths (wizard prefill, default comparison, uninstall
+; deletion) stay fully active in test builds, so the default-root uninstall
+; sweep has real build coverage (D-R7) without any real-state risk.
+#ifndef TestId
+  #define DefaultDataRoot "{localappdata}\BlackScreen"
+#else
+  #ifndef DefaultDataRoot
+    #error TestId builds require /DDefaultDataRoot=<isolated BlackScreen root> (D10)
+  #endif
 #endif
 
 [Setup]
@@ -135,14 +158,24 @@ ErrorCloseApplications=安装程序无法自动关闭所有应用程序。建议
 StatusClosingApplications=正在关闭应用程序...
 StatusRestartingApplications=正在重启应用程序...
 
-; Exactly the four payload files the zip ships (D2): the app installs nothing
-; else - default settings self-heal inside the code, so no settings file is
-; ever pre-seeded (pre-seeding would be a second source of truth).
+; Exactly the dual-exe payload the build emits (RESEARCH-V11 §7 row 4) plus
+; the readme: both exes with their .exe.config sidecars, nothing else. No
+; standalone icon file ships any more - each exe embeds its own (D2). No
+; settings file is ever pre-seeded: default settings self-heal inside the
+; code (pre-seeding would be a second source of truth).
 [Files]
 Source: "..\dist\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\{#AppExeName}.config"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\dist\icon-settings.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\{#AppSettingsExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\{#AppSettingsExeName}.config"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\使用说明.txt"; DestDir: "{app}"; Flags: ignoreversion
+
+; One-shot sweep of the 1.2.0 portable self-update leftovers (RESEARCH-V11
+; §7 row 8 / D4): the app side dropped its own backup cleanup, so the
+; installer recycles any stale "*.old" siblings right before the new dual-exe
+; payload lands.
+[InstallDelete]
+Type: files; Name: "{app}\*.old"
 
 ; Install-ownership registration (V10 D6): InitializeUninstall compares this
 ; value against the directory recorded in its own uninstall log and refuses
@@ -171,7 +204,11 @@ Name: "desktopicon"; Description: "创建桌面快捷方式(&D)"; Flags: uncheck
 
 [Icons]
 Name: "{group}\一键黑屏"; Filename: "{app}\{#AppExeName}"
-Name: "{group}\一键黑屏-设置"; Filename: "{app}\{#AppExeName}"; Parameters: "--settings"; IconFilename: "{app}\icon-settings.ico"
+; Settings entry points straight at the dedicated settings exe (D2): zero
+; parameters, and the exe's own embedded icon - no sidecar icon file, no
+; command-line dispatch through the mask exe (the mask exe keeps its
+; parameter dispatch so legacy shortcuts and the idle task stay compatible).
+Name: "{group}\一键黑屏-设置"; Filename: "{app}\{#AppSettingsExeName}"
 Name: "{autodesktop}\一键黑屏"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
 
 ; Post-install relaunch (V10 D2): no skipifsilent by design - a silent
@@ -190,12 +227,17 @@ Filename: "{sys}\schtasks.exe"; Parameters: "/delete /tn {#IdleTaskName} /f"; Fl
 
 [Code]
 const
-  // Frozen cross-track contract (RESEARCH-V10 §7): the key root arrives via
-  // the ISPP define so isolation builds live under the -TEST suffix.
+  // Frozen cross-track contract (RESEARCH-V11 §7 row 6): the key root arrives
+  // via the ISPP define so isolation builds live under the -TEST suffix; the
+  // five registration values are named once here and swept as a complete set
+  // at uninstall (D5) - the updater's two check-state values included, or the
+  // uninstall would leave an empty husk of the key behind.
   DataRegistryKey = '{#DataRegistryRoot}';
   DataDirectoryValue = 'DataDirectory';
   DataParentDirectoryValue = 'DataParentDirectory';
   InstallDirectoryValue = 'InstallDirectory';
+  LastUpdateCheckValue = 'LastUpdateCheck';
+  UpdateAvailableValue = 'UpdateAvailable';
   ManagedRootLeaf = 'BlackScreen';
 
 var
@@ -301,9 +343,27 @@ begin
     (CompareText(NormalizeDirectory(A), NormalizeDirectory(B)) = 0);
 end;
 
+// Preprocessor-injected default root (D10): the frozen per-user location in
+// production, a TEMP-isolated root in test builds. ExpandConstant resolves
+// the {localappdata} spelling in production and is the identity for a plain
+// injected absolute path.
+function DefaultDataRoot: String;
+begin
+  Result := ExpandConstant('{#DefaultDataRoot}');
+end;
+
+function GetManagedDataParent(const DataRoot: String): String;
+begin
+  Result := RemoveBackslashUnlessRoot(ExtractFilePath(
+    RemoveBackslashUnlessRoot(DataRoot)));
+end;
+
+// Always derived from the default root itself, never a second literal, so a
+// redirected test root keeps the wizard prefill and the default-vs-custom
+// comparison coherent with what the uninstall path would delete.
 function DefaultDataParent: String;
 begin
-  Result := ExpandConstant('{localappdata}');
+  Result := GetManagedDataParent(DefaultDataRoot);
 end;
 
 // The single managed shape (RESEARCH-V10 §7): <selected parent>\BlackScreen
@@ -311,17 +371,6 @@ end;
 function BuildDataRoot(const ParentDirectory: String): String;
 begin
   Result := AddBackslash(NormalizeDirectory(ParentDirectory)) + ManagedRootLeaf;
-end;
-
-function DefaultDataRoot: String;
-begin
-  Result := BuildDataRoot(DefaultDataParent);
-end;
-
-function GetManagedDataParent(const DataRoot: String): String;
-begin
-  Result := RemoveBackslashUnlessRoot(ExtractFilePath(
-    RemoveBackslashUnlessRoot(DataRoot)));
 end;
 
 function IsManagedDataDirectory(const Value: String): Boolean;
@@ -582,18 +631,12 @@ begin
   end
   else
   begin
-#ifdef TestId
-    // Isolation builds must never touch the real %LOCALAPPDATA%\BlackScreen:
-    // with no test registration there is nothing test-owned to delete. The
-    // real build's default-root deletion is covered by the integration
-    // track's real-machine smoke test.
-    Log('Test build: no data directory registered; skipping default-root deletion.');
-    UninstallDataRoot := '';
-    UninstallDataRootValid := True;
-#else
+    // No registered data directory: the effective data root IS the default
+    // one (D5). Test builds run this exact path against the redirected
+    // default root (D10), so the default-root deletion has real build
+    // coverage (D-R7) and can only ever reach the sandbox root there.
     UninstallDataRoot := DefaultDataRoot;
     UninstallDataRootValid := True;
-#endif
   end;
   Result := True;
 end;
@@ -634,5 +677,20 @@ begin
 
     RegDeleteValue(HKCU, DataRegistryKey, DataDirectoryValue);
     RegDeleteValue(HKCU, DataRegistryKey, DataParentDirectoryValue);
+    // Update-check state sweep (D5): the app's updater is the only writer of
+    // these two values; without this the uninstall would leave the key
+    // behind as an empty husk, breaking the documented no-residue promise.
+    RegDeleteValue(HKCU, DataRegistryKey, LastUpdateCheckValue);
+    RegDeleteValue(HKCU, DataRegistryKey, UpdateAvailableValue);
+  end;
+
+  // Empty-key removal (D5): by usPostUninstall the uninsdeletevalue pass has
+  // removed InstallDirectory as well, so an empty key here means the whole
+  // five-value registration is genuinely gone. Anything foreign (extra
+  // values, subkeys) keeps the key alive untouched.
+  if CurUninstallStep = usPostUninstall then
+  begin
+    if not RegDeleteKeyIfEmpty(HKCU, DataRegistryKey) then
+      Log('Data registry key not empty or already absent: ' + DataRegistryKey);
   end;
 end;
