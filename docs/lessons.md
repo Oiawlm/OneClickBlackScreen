@@ -122,3 +122,10 @@
 - 正解：分发只走标准 Windows 集成（安装器/开始菜单快捷方式，V9 起由安装包承担），个人环境约定不入库；既有落点手术式根除（用户 2026-11-05 授权含冻结区）。
 - 出处：用户 2026-11-05 指令（docs/handoff/archive/2026-11-05-v9-installer/RESEARCH-V9.md §1①/§6-1）；install.ps1（本轮整文件删除）。
 - 防再犯：新分发面评审问「这条在陌生电脑上成立吗」；不成立即个人约定，不入库。
+
+### L-018｜github.com 直连被重置，git 远端操作走本机代理（V11）
+- 现象：`git push origin main` 直连报 `Recv failure: Connection was reset`／`Failed to connect to github.com:443`；同期 `api.github.com` HTTP 200 可达；本机 `127.0.0.1:7897` 有代理监听但 git 与环境变量均未配置代理。
+- 根因：本机对 github.com 的直连线路受干扰（api.github.com 线路独立幸存）；git-for-windows 不自动继承 Windows 系统代理。
+- 正解：一次性参数 `git -c http.proxy=http://127.0.0.1:7897 push origin main`（V11 立项提交 bad8de0..5ec3427 实证成功）；不写入仓库级/全局 git 配置——代理端口属本机个人环境（L-017 精神）。
+- 出处：docs/handoff/2026-11-12-v11-singleform/（V11 规划窗立项推送实录，2026-11-12）；V10 轮事故裁决 D-5「网络瞬断」为其轻症前兆。
+- 防再犯：远端操作直连失败先 `curl -sI https://api.github.com` 分流定位；本机 push/ls-remote 一律带 `-c http.proxy=http://127.0.0.1:7897`；该端口仅本机有效，非通用事实。
