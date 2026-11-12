@@ -1,7 +1,7 @@
-using System;
+﻿using System;
 using System.Threading;
 
-// Session gate shared by all seven verifiers (V7V): the GUI verifiers inject
+// Session gate shared by all eight verifiers (V7V, V11 D8): the GUI verifiers inject
 // global keyboard/mouse input and seize the foreground, and every verifier
 // writes fixed paths (verify\bin, _probe) - all session-exclusive resources
 // (AGENTS.md §2), so two concurrent verifier runs in one login session

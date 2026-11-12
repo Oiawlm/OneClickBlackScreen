@@ -7,37 +7,30 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
-using Microsoft.Win32;
 
 // Hand-written GitHub Releases updater (B1/B3-B6, R1): zero dependencies beyond
-// the BCL, so the single-exe csc build stays intact. Check() reads the
-// releases/latest API, DownloadAndVerify() fetches and validates the asset,
-// ReplaceSequence() swaps the running exe via rename+copy - a running image can
-// be renamed but not replaced in place (R1 rules out the in-place replace API).
-// Every method is synchronous - the settings dialog drives them from the thread
-// pool and marshals back with Control.Invoke; the mask mode never touches this
-// class (U2: only the settings window ever goes online).
-// V10 dual-form (D1/D2): Check() also resolves the Setup asset, DownloadStaged()
-// predownloads the artifact this installation form consumes into
-// %TEMP%\BlackScreenUpdate\, and LaunchSetup() hands the installed form over to
-// the silent Inno reinstall. The portable self-replace chain below is untouched.
+// the BCL, so the csc build stays intact. Single-form by contract (V11 D1/D4):
+// the only release assets are the Setup installer and its SHA256SUMS - Check()
+// resolves the Setup asset (a release without it fails loud and honest),
+// DownloadStaged() predownloads it verified into %TEMP%\BlackScreenUpdate\, and
+// LaunchSetup() hands over to the silent Inno reinstall; the portable
+// self-replace chain is gone with the portable form. Every method is
+// synchronous - the settings dialog drives them from the thread pool and
+// marshals back with Control.Invoke; the mask mode never touches this class
+// (U2: only the settings window ever goes online).
 internal static class Updater
 {
     // GitHub rejects default .NET user agents, so every request carries ours.
     private const string UserAgent = "OneClickBlackScreen-Updater/" + AppInfo.Version;
 
-    // What the settings footer needs to know about a newer release. The exe
-    // fields (DownloadUrl/Size/Sha256Hex) describe the portable self-replace
-    // asset; the Setup fields describe the installer asset the installed form
-    // consumes (V10 D2). Sha256Hex/SetupSha256Hex are the primary expectations
-    // (assets[].digest, "sha256:<hex>"); SumsUrl is the shared SHA256SUMS
-    // fallback asset; either may be null and the chain stays fail-closed (B5).
+    // What the settings footer needs to know about a newer release: the Setup
+    // installer asset plus the shared SHA256SUMS fallback asset (V11 D4 - the
+    // single form). SetupSha256Hex is the primary expectation (assets[].digest,
+    // "sha256:<hex>"); either hash source may be null and the chain stays
+    // fail-closed (B5).
     internal sealed class UpdateInfo
     {
         public string Tag;
-        public string DownloadUrl;
-        public long Size;
-        public string Sha256Hex;
         public string SumsUrl;
         public string SetupUrl;
         public long SetupSize;
@@ -75,125 +68,42 @@ internal static class Updater
         foreach (Json asset in assets.Items)
         {
             string name = asset.StringField("name");
-            if (name == AppInfo.UpdateAssetName)
-            {
-                info.DownloadUrl = asset.StringField("browser_download_url");
-                info.Size = asset.NumberField("size", -1);
-                info.Sha256Hex = ParseDigest(asset.StringField("digest"));
-            }
-            else if (name == SetupAssetNameFor(tag))
+            if (name == SetupAssetNameFor(tag))
             {
                 info.SetupUrl = asset.StringField("browser_download_url");
                 info.SetupSize = asset.NumberField("size", -1);
                 info.SetupSha256Hex = ParseDigest(asset.StringField("digest"));
             }
-            else if (name == "SHA256SUMS")
+            else if (name == AppInfo.ChecksumsAssetName)
             {
                 info.SumsUrl = asset.StringField("browser_download_url");
             }
         }
-        if (info.DownloadUrl == null)
-            throw new InvalidDataException("最新发布未包含更新资产 " + AppInfo.UpdateAssetName + "。");
+        if (info.SetupUrl == null)
+            throw new InvalidDataException("最新发布未包含安装包资产 " + SetupAssetNameFor(tag) + "。");
         return info;
     }
 
-    // Phase 1 (worker thread): resolve the expected hash - assets[].digest
-    // first, then the SHA256SUMS asset text; both absent means refuse (B5
-    // fail-closed) - then download to a %TEMP% random name and check the
-    // declared size and the SHA-256. Returns the verified temp path; the caller
-    // owns deleting it.
-    public static string DownloadAndVerify(UpdateInfo update, Action<int> onProgress)
-    {
-        string expected = update.Sha256Hex;
-        if (expected == null && update.SumsUrl != null)
-        {
-            string sums;
-            using (WebClient client = CreateClient())
-            {
-                sums = client.DownloadString(update.SumsUrl);
-            }
-            expected = ParseSha256Sums(sums, AppInfo.UpdateAssetName);
-        }
-        if (expected == null)
-            throw new InvalidOperationException("官方发布未提供 SHA-256 校验和，已按安全策略拒绝更新。");
-        string temp = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        try
-        {
-            DownloadFile(update.DownloadUrl, temp, update.Size, onProgress);
-            VerifySha256(temp, expected);
-            return temp;
-        }
-        catch
-        {
-            try { if (File.Exists(temp)) File.Delete(temp); } catch { }
-            throw;
-        }
-    }
+    // ---- staged Setup update (V10 D1, V11 single form) ----------------------
+    // The single artifact this app ever consumes is the Setup installer: the
+    // predownload lands it verified in %TEMP%\BlackScreenUpdate\ so the user's
+    // "update now" click is instantaneous, and the apply hands over to the
+    // silent Inno reinstall (which remembers the install directory, closes the
+    // app and restarts the mask).
 
-    // Full chain in one call (download + verify + replace). The settings dialog
-    // splits the halves instead so the replace runs on its UI thread.
-    public static void DownloadAndApply(UpdateInfo update, string targetPath, Action<int> onProgress)
-    {
-        string temp = DownloadAndVerify(update, onProgress);
-        try
-        {
-            ReplaceSequence(temp, targetPath);
-        }
-        finally
-        {
-            try { if (File.Exists(temp)) File.Delete(temp); } catch { }
-        }
-    }
-
-    // ---- V10 dual-form update (D1/D2) ---------------------------------------
-    // Installed form = the Setup asset silently reinstalled by Inno (which
-    // remembers the install directory, closes the app and restarts the mask);
-    // portable form = the exe self-replace chain above, byte-for-byte the V7
-    // behavior. The preddownload staging below serves both: the artifact this
-    // form consumes lands verified in %TEMP%\BlackScreenUpdate\ so the user's
-    // "update now" click is instantaneous (D1).
-
-    // Frozen cross-track contract (RESEARCH-V10 §7): the Setup release asset
-    // name, mirroring build-setup.cmd's OutputBaseFilename (tag with the
-    // leading "v" stripped).
+    // Frozen cross-track contract (RESEARCH-V11 §7 table 1): the Setup release
+    // asset name = the AppInfo prefix + the tag with the leading "v" stripped
+    // + ".exe", mirroring the installer's OutputBaseFilename. The prefix is
+    // single-sourced in AppInfo so the updater, the build script and the
+    // release tooling can never drift.
     public static string SetupAssetNameFor(string tag)
     {
         string version = tag != null && tag.StartsWith("v", StringComparison.Ordinal)
             ? tag.Substring(1) : tag;
-        return "OneClickBlackScreen-Setup-" + version + ".exe";
+        return AppInfo.SetupAssetNamePrefix + version + ".exe";
     }
 
-    // The per-user Inno uninstall key (see UninstallKeyPath below): its
-    // existence is the installed-form verdict (D2). Read-only HKCU probe
-    // behind an injectable seam so the offline verifier can pin both states.
-    public static bool IsInstalledForm
-    {
-        get { return installedFormProbe != null ? installedFormProbe() : ReadUninstallKeyPresent(); }
-    }
-
-    private static Func<bool> installedFormProbe;
-
-    internal static void UseInstalledFormProbe(Func<bool> probe)
-    {
-        installedFormProbe = probe;
-    }
-
-    private static bool ReadUninstallKeyPresent()
-    {
-        try
-        {
-            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(UninstallKeyPath))
-            {
-                return key != null;
-            }
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    // Predownload staging directory (RESEARCH-V10 §7): one well-known place,
+    // Predownload staging directory (RESEARCH-V11 §7): one well-known place,
     // emptied before anything lands so no stale artifact can mix in, and the
     // verified file stays put until the one-click apply consumes it.
     public static string StagingDirectory
@@ -201,15 +111,14 @@ internal static class Updater
         get { return Path.Combine(Path.GetTempPath(), "BlackScreenUpdate"); }
     }
 
-    // Download the artifact this installation form consumes, verified, into
-    // the staging directory (D1). The whole reset/download/verify span rides
-    // the machine-wide update mutex so two settings instances cannot
-    // interleave their staging writes; a failure cleans the directory again -
-    // only a verified file is ever left staged.
+    // Download the Setup artifact, verified, into the staging directory (D1).
+    // The whole reset/download/verify span rides the machine-wide update mutex
+    // so two settings instances cannot interleave their staging writes; a
+    // failure cleans the directory again - only a verified file is ever left
+    // staged.
     public static string DownloadStaged(UpdateInfo update, Action<int> onProgress)
     {
-        bool installed = IsInstalledForm;
-        string assetName = installed ? SetupAssetNameFor(update.Tag) : AppInfo.UpdateAssetName;
+        string assetName = SetupAssetNameFor(update.Tag);
         using (Mutex mutex = new Mutex(false, UpdateMutexName))
         {
             bool owned = false;
@@ -224,7 +133,7 @@ internal static class Updater
                 try
                 {
                     string target = Path.Combine(directory, assetName);
-                    DownloadStagedAsset(update, installed, target, onProgress);
+                    DownloadStagedAsset(update, target, onProgress);
                     return target;
                 }
                 catch
@@ -240,19 +149,16 @@ internal static class Updater
         }
     }
 
-    // One staged asset: resolve the expected hash for this form's asset name
+    // One staged asset: resolve the expected hash for the Setup asset name
     // (digest first, SHA256SUMS line fallback, double-missing refusal - the
-    // same fail-closed chain as the portable path, B5), then download with
-    // the declared size check and the SHA-256 verify, in place.
-    private static void DownloadStagedAsset(UpdateInfo update, bool installed, string target, Action<int> onProgress)
+    // same fail-closed chain as ever, B5), then download with the declared
+    // size check and the SHA-256 verify, in place.
+    private static void DownloadStagedAsset(UpdateInfo update, string target, Action<int> onProgress)
     {
-        string assetName = installed ? SetupAssetNameFor(update.Tag) : AppInfo.UpdateAssetName;
-        string url = installed ? update.SetupUrl : update.DownloadUrl;
-        long size = installed ? update.SetupSize : update.Size;
-        if (url == null)
-            throw new InvalidDataException("最新发布未包含"
-                + (installed ? "安装包资产 " : "更新资产 ") + assetName + "。");
-        string expected = installed ? update.SetupSha256Hex : update.Sha256Hex;
+        string assetName = SetupAssetNameFor(update.Tag);
+        if (update.SetupUrl == null)
+            throw new InvalidDataException("最新发布未包含安装包资产 " + assetName + "。");
+        string expected = update.SetupSha256Hex;
         if (expected == null && update.SumsUrl != null)
         {
             string sums;
@@ -264,7 +170,7 @@ internal static class Updater
         }
         if (expected == null)
             throw new InvalidOperationException("官方发布未提供 SHA-256 校验和，已按安全策略拒绝更新。");
-        DownloadFile(url, target, size, onProgress);
+        DownloadFile(update.SetupUrl, target, update.SetupSize, onProgress);
         VerifySha256(target, expected);
     }
 
@@ -295,8 +201,8 @@ internal static class Updater
         return new ProcessStartInfo(setupPath, SetupSilentArguments);
     }
 
-    // Installed-form apply (D2): launch the staged, verified Setup under the
-    // update mutex - a short critical section around the spawn so two
+    // Apply (V10 D2, V11 single form): launch the staged, verified Setup under
+    // the update mutex - a short critical section around the spawn so two
     // instances cannot start two setups - then hand everything to Inno (B
     // track): it closes the app, reinstalls over the remembered directory and
     // restarts the mask. The caller exits this process right after.
@@ -320,155 +226,23 @@ internal static class Updater
         }
     }
 
-    // Machine-wide exclusion for the on-disk swap (V7S): the settings window is
-    // deliberately multi-instance, so two instances can reach this swap for the
-    // same exe at the same time, and the backup the rollback chain depends on
-    // is one well-known name - an unserialized second entrant deletes the first
-    // one's live backup or double-replaces the target. The exe lives on a
-    // machine-shared path (every user, every session), so the mutex is
-    // Global\; the mask mutex stays Local\ because a mask per desktop is the
-    // intended semantics (U3) - the asymmetry is first-principles correct.
+    // Machine-wide exclusion for the staged update (V7S, V11): the settings
+    // window is deliberately multi-instance, so two instances can reach the
+    // staging directory and the Setup launch at the same time - an
+    // unserialized second entrant could interleave its staging writes into a
+    // verified file or start a second installer. The staging path and the
+    // install directory live on machine-shared paths (every user, every
+    // session), so the mutex is Global\; the mask mutex stays Local\ because
+    // a mask per desktop is the intended semantics (U3) - the asymmetry is
+    // first-principles correct.
     private const string UpdateMutexName = @"Global\BlackScreen.Update";
 
     // Bounded wait so a wedged holder can never freeze the settings UI forever.
-    // The swap is two metadata ops plus one local copy, so a healthy holder
-    // releases within milliseconds; reaching the bound means the other
-    // instance is genuinely stuck and the waiter reports the busy failure.
+    // The staged work is a directory reset plus one local download, so a
+    // healthy holder releases within moments; reaching the bound means the
+    // other instance is genuinely stuck and the waiter reports the busy
+    // failure.
     private const int UpdateMutexWaitMs = 10000;
-
-    // Phase 2: swap the exe in three steps - remove any stale .old, rename the
-    // running image to .old (renaming a running image is allowed; an in-place
-    // replace would throw, R1), copy the verified file into place. A failure
-    // after the rename rolls the backup back so the app keeps booting; the
-    // .old left by a success is cleaned at the next Program.Main entry (B6).
-    // The whole sequence - pre-clean, rename, copy and the rollback path -
-    // runs under the update mutex (V7S). A waiter that acquires after a
-    // concurrent instance already finished finds the target identical to the
-    // downloaded bytes and returns as a no-op success: same end state and same
-    // success the user asked for, without a second swap.
-    internal static void ReplaceSequence(string downloadedPath, string targetPath)
-    {
-        using (Mutex mutex = new Mutex(false, UpdateMutexName))
-        {
-            bool owned = false;
-            try
-            {
-                try { owned = mutex.WaitOne(UpdateMutexWaitMs); }
-                catch (AbandonedMutexException) { owned = true; }
-                if (!owned)
-                    throw new IOException("另一更新正在进行，请稍后重试。");
-                string downloadedSha = Sha256HexOrNull(downloadedPath);
-                if (downloadedSha != null && downloadedSha == Sha256HexOrNull(targetPath)) return;
-                string backup = targetPath + ".old";
-                if (File.Exists(backup)) File.Delete(backup);
-                try
-                {
-                    File.Move(targetPath, backup);
-                }
-                catch (Exception ex)
-                {
-                    throw new IOException("无法备份当前程序（" + ex.Message + "），未做任何改动。", ex);
-                }
-                try
-                {
-                    File.Copy(downloadedPath, targetPath, false);
-                }
-                catch (Exception ex)
-                {
-                    try
-                    {
-                        if (File.Exists(targetPath)) File.Delete(targetPath);
-                        File.Move(backup, targetPath);
-                    }
-                    catch { }
-                    throw new IOException("写入新版本失败（" + ex.Message + "），已还原原版本。", ex);
-                }
-                // With the new bytes on disk, refresh the per-user
-                // "Add/Remove Programs" entry so its DisplayVersion cannot
-                // lag behind the installed exe (V9 installer integration).
-                SyncUninstallVersion(targetPath);
-            }
-            finally
-            {
-                if (owned) mutex.ReleaseMutex();
-            }
-        }
-    }
-
-    // The per-user Inno Setup uninstall key (HKCU, because the installer runs
-    // PrivilegesRequired=lowest). The GUID must stay byte-identical to
-    // RealAppId in setup\OneClickBlackScreen.iss - that script's comment
-    // points back here. An AppId cannot be shared across an .iss and C#,
-    // so each file carries the value exactly once and they cross-verify.
-    private const string UninstallKeyPath =
-        @"Software\Microsoft\Windows\CurrentVersion\Uninstall\{5A17668F-45A0-48F0-B5B1-067E37EFA98D}_is1";
-
-    // Sync "Add/Remove Programs" DisplayVersion after a completed swap, but
-    // only when this copy is actually installed (key present). A portable
-    // user has no HKCU entry, so the call reads as a no-op with zero
-    // observable change - exactly what VerifyUpdate proves on a dev machine.
-    // Best-effort on purpose: the swap already succeeded, so a registry
-    // hiccup must never turn the update into a reported failure.
-    private static void SyncUninstallVersion(string installedPath)
-    {
-        try
-        {
-            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(UninstallKeyPath, true))
-            {
-                if (key == null) return;
-                string version = InstalledVersionOf(installedPath);
-                if (version != null)
-                    key.SetValue("DisplayVersion", version, RegistryValueKind.String);
-            }
-        }
-        catch { }
-    }
-
-    // The only ground truth for the new version string is the file that was
-    // just installed - the process running this code still carries the OLD
-    // AppInfo.Version. AppInfo.Version is a compile-time const, so reading
-    // its field through reflection copies the literal without executing any
-    // code from the loaded assembly; anything unexpected reads as null and
-    // skips the write rather than writing a value known to be stale.
-    private static string InstalledVersionOf(string path)
-    {
-        try
-        {
-            System.Reflection.Assembly assembly = System.Reflection.Assembly.LoadFrom(path);
-            System.Reflection.FieldInfo field = assembly.GetType("AppInfo").GetField("Version");
-            return field != null && field.IsLiteral ? (string)field.GetValue(null) : null;
-        }
-        catch { return null; }
-    }
-
-    // B6 startup cleanup, riding the same mutex as the swap (V7S): a leftover
-    // .old is only leftover when no swap is in flight, and an unserialized
-    // startup delete could destroy a concurrent swap's live backup. The
-    // zero-timeout probe is exactly the needed semantics - mutex free means no
-    // swap is running so the delete is safe; mutex held means the .old belongs
-    // to a live swap, so the deletion simply waits for the next start. Stays
-    // best-effort like the inline delete it replaces.
-    internal static void DeleteStaleBackup(string exePath)
-    {
-        try
-        {
-            using (Mutex mutex = new Mutex(false, UpdateMutexName))
-            {
-                bool owned = false;
-                try
-                {
-                    try { owned = mutex.WaitOne(0); }
-                    catch (AbandonedMutexException) { owned = true; }
-                    if (owned) try { File.Delete(exePath + ".old"); } catch { }
-                }
-                finally
-                {
-                    if (owned) mutex.ReleaseMutex();
-                }
-            }
-        }
-        catch { }
-    }
 
     // WebClient follows the 302 to the signed URL by itself (R1); the stream
     // copy exists only so progress can stream. A declared size that disagrees
@@ -497,9 +271,8 @@ internal static class Updater
     }
 
     // Streamed SHA-256 as lowercase hex; unreadable file reads as null. The
-    // download verification turns null into the checksum failure below, and
-    // the under-lock recheck treats null as "not a no-op" so the swap itself
-    // surfaces the real error - one hashing path for both callers.
+    // download verification turns null into the checksum failure below - one
+    // hashing path for every caller.
     private static string Sha256HexOrNull(string path)
     {
         try
@@ -531,11 +304,11 @@ internal static class Updater
         return IsSha256Hex(hex) ? hex : null;
     }
 
-    // SHA256SUMS lines read "<hex>␣␣<name>" (certutil/GNU style); a leading "*"
-    // on the name (GNU binary marker) is tolerated. Returns null when no line
-    // matches the asked-for asset (B5 fail-closed). The asset name is a
-    // parameter since V10: the file covers both the portable exe and the
-    // Setup installer lines.
+    // SHA256SUMS lines read "<hex>␣*<name>" (the frozen release format, GNU
+    // binary marker style); plain "<hex>␣␣<name>" is tolerated too. Returns
+    // null when no line matches the asked-for asset (B5 fail-closed). The
+    // asset name is a parameter: the SUMS file covers every release asset's
+    // line.
     private static string ParseSha256Sums(string sums, string assetName)
     {
         if (sums == null) return null;

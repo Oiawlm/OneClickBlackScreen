@@ -94,6 +94,10 @@ internal static class VerifyPaths
         Check(!AppPaths.IsManagedDataRoot(@"D:\App\BlackScreen\"), "a trailing separator must fail");
         Check(!AppPaths.IsManagedDataRoot(""), "empty must fail");
         Check(!AppPaths.IsManagedDataRoot(null), "null must fail");
+        Check(!AppPaths.IsManagedDataRoot(@"C:\x\..\BlackScreen"),
+            "a '..' segment must fail the lexical guard - no expansion, no normalization rescue (V11 D6)");
+        Check(!AppPaths.IsManagedDataRoot(@"D:\Data\folder..\BlackScreen"),
+            "a '..' run inside any name must fail the same lexical guard - the raw trimmed string is what gets judged");
         Check(AppPaths.IsManagedDataRoot(@"D:\App\BlackScreen "),
             "surrounding whitespace is trimmed, so the shape still passes");
         Console.WriteLine("PASS: managed shape matrix (suffix \\BlackScreen, case-insensitive, parent non-root, fully qualified, no trailing separator)");
@@ -124,6 +128,7 @@ internal static class VerifyPaths
             @"D:\BlackScreenX",          // longer suffix
             @"C:\",                      // drive root
             @"D:\App\BlackScreen\",      // trailing separator
+            @"C:\x\..\BlackScreen",      // '..' segment - lexical guard (V11 D6)
             "  ",                        // whitespace only
         };
         foreach (string candidate in illegal)
@@ -191,6 +196,8 @@ internal static class VerifyPaths
                 "case 1: the migrated settings.ini must match byte-for-byte");
             Check(store.GetString(AppPaths.DataDirectoryValueName) == Path.GetFullPath(new1),
                 "case 1: the registration must commit the new root");
+            Check(store.GetString(AppPaths.DataParentValueName) == Path.GetDirectoryName(Path.GetFullPath(new1)),
+                "case 1: the commit must register the chosen parent alongside (V11 D7)");
             Check(!Directory.Exists(old1), "case 1: the settings-only old root must be guard-deleted");
             Check(outcome1.OldRootRemoved, "case 1: the outcome must report the old root removed");
 
@@ -247,14 +254,25 @@ internal static class VerifyPaths
                 "case 4: a missing old root must still commit the new registration");
             Check(outcome4.OldRootRemoved, "case 4: an absent old root must report as removed");
 
-            // Case 5 - CommitDataRoot to the default location deletes the
-            // registration entirely (D3 zero-registration default state).
+            // Case 5 - CommitDataRoot writes the two-value registration
+            // symmetrically (V11 D7): a non-default commit lands DataDirectory
+            // plus DataParentDirectory (overwriting any stale parent), and a
+            // commit back to the default clears both (D3 zero-registration
+            // default state - neither value ever outlives the other).
             store.SetString(AppPaths.DataDirectoryValueName, new4);
+            store.SetString(AppPaths.DataParentValueName, @"E:\StaleParent");
+            AppPaths.CommitDataRoot(new4);
+            Check(store.GetString(AppPaths.DataDirectoryValueName) == Path.GetFullPath(new4),
+                "case 5: the non-default commit must write the registration");
+            Check(store.GetString(AppPaths.DataParentValueName) == Path.GetDirectoryName(Path.GetFullPath(new4)),
+                "case 5: the non-default commit must write the parent registration");
             AppPaths.CommitDataRoot(AppPaths.DefaultDataRoot);
             Check(store.GetString(AppPaths.DataDirectoryValueName) == null,
                 "case 5: committing the default root must delete the registration");
-            Console.WriteLine("PASS: migration pipeline in TEMP (copy+verify+commit, guarded delete, "
-                + "locked-target atomicity, fresh-install, zero-registration default)");
+            Check(store.GetString(AppPaths.DataParentValueName) == null,
+                "case 5: committing the default root must delete the parent registration too");
+            Console.WriteLine("PASS: migration pipeline in TEMP (copy+verify+commit+parent, guarded delete, "
+                + "locked-target atomicity, fresh-install, symmetric commit, zero-registration default)");
         }
         finally
         {
