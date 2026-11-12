@@ -10,11 +10,6 @@ internal static class Program
     {
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
-        // Leftover backup from a previous self-update (B6): remove it best-effort
-        // in every mode; a locked file simply waits for the next start. The
-        // delete rides the update mutex (V7S) so a starting instance cannot
-        // destroy the live backup of a swap running in another instance.
-        Updater.DeleteStaleBackup(Application.ExecutablePath);
         if (args.Length == 0) return RunOverlay();
         if (args.Length == 1 && args[0] == "--settings") return RunSettings();
         if (args.Length == 1 && args[0] == "--idle") return RunIdleCheck();
@@ -106,7 +101,10 @@ internal static class Program
         return RunOverlay();
     }
 
-    private static int RunSettings()
+    // Entry shared with SettingsProgram (V11 D2): the settings exe's Main is
+    // just the WinForms bootstrap plus this call, so both exes run one and
+    // the same settings pipeline.
+    internal static int RunSettings()
     {
         using (SettingsDialog dialog = new SettingsDialog())
         {

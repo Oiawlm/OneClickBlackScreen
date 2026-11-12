@@ -1,4 +1,5 @@
 ﻿-target:winexe
+-main:Program
 -optimize+
 -langversion:5
 -r:System.dll

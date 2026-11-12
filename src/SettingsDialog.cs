@@ -800,43 +800,21 @@ internal sealed class SettingsDialog : Form
         });
     }
 
+    // Single-form apply (V10 D2, V11 D4): hand off to the staged, verified
+    // Setup. Inno closes the app, reinstalls over the remembered directory and
+    // restarts the mask; this window just exits so the installer can take
+    // over - no dialog may outlive the swap it started, and the staging
+    // directory is consumed by the installer run.
     private void BeginApplyUpdate()
     {
         if (pendingUpdate == null || stagedUpdatePath == null) return;
-        Updater.UpdateInfo update = pendingUpdate;
         string staged = stagedUpdatePath;
         checkUpdateButton.Enabled = false;
         applyUpdateButton.Enabled = false;
-        if (Updater.IsInstalledForm)
-        {
-            // Installed form (V10 D2): hand off to the silent Setup. Inno
-            // closes the app, reinstalls over the remembered directory and
-            // restarts the mask; this window just exits so the installer can
-            // take over - no dialog may outlive the swap it started.
-            updateStatusLabel.Text = "正在启动安装…";
-            try
-            {
-                Updater.LaunchSetup(staged);
-            }
-            catch (Exception ex)
-            {
-                updateStatusLabel.Text = "更新失败：" + ex.Message;
-                checkUpdateButton.Enabled = true;
-                applyUpdateButton.Enabled = true;
-                return;
-            }
-            AppPaths.CompleteUpdateCheck(null);
-            Close();
-            return;
-        }
-        // Portable form: the existing UI-thread swap chain, unchanged - the
-        // swap takes the machine-wide update mutex (V7S) so the dialog cannot
-        // close mid-replace (B6), and a concurrent second instance waits
-        // briefly inside; the install label keeps that wait readable.
-        updateStatusLabel.Text = "正在安装…";
+        updateStatusLabel.Text = "正在启动安装…";
         try
         {
-            Updater.ReplaceSequence(staged, Application.ExecutablePath);
+            Updater.LaunchSetup(staged);
         }
         catch (Exception ex)
         {
@@ -845,14 +823,7 @@ internal sealed class SettingsDialog : Form
             applyUpdateButton.Enabled = true;
             return;
         }
-        finally
-        {
-            try { if (File.Exists(staged)) File.Delete(staged); } catch { }
-            try { if (Directory.Exists(Updater.StagingDirectory)) Directory.Delete(Updater.StagingDirectory, true); } catch { }
-        }
         AppPaths.CompleteUpdateCheck(null);
-        MessageBox.Show("已更新到 " + update.Tag + "，关闭本窗口后双击主程序即运行新版。",
-            "一键黑屏 · 设置", MessageBoxButtons.OK, MessageBoxIcon.Information);
         Close();
     }
 

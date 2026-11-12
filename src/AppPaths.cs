@@ -96,12 +96,16 @@ internal static class AppPaths
     // path ending in "\BlackScreen" (case-insensitive, no trailing
     // separator) whose parent is a real directory - not a drive root, not a
     // UNC share root, and not the current drive's root (a drive-less
-    // "\BlackScreen" fails the parent==root check below).
+    // "\BlackScreen" fails the parent==root check below). A ".." anywhere in
+    // the trimmed raw string is rejected lexically (V11 D6): no expansion,
+    // no normalization ever rescues it, so this side and the B side judge
+    // the very same characters.
     public static bool IsManagedDataRoot(string path)
     {
         if (path == null) return false;
         string trimmed = path.Trim();
         if (trimmed.Length == 0) return false;
+        if (trimmed.IndexOf("..", StringComparison.Ordinal) >= 0) return false;
         if (!trimmed.EndsWith("\\" + ManagedDirectoryName, StringComparison.OrdinalIgnoreCase)) return false;
         string parent = Path.GetDirectoryName(trimmed);
         if (string.IsNullOrEmpty(parent)) return false;
@@ -187,16 +191,25 @@ internal static class AppPaths
 
     // ---- migration pipeline (D4) -------------------------------------------
 
-    // Commit a data root: the registration exists only while the root is not
-    // the default (D3 zero-registration default state), so an explicit move
-    // back to the default location deletes the value again.
+    // Commit a data root, writing the two-value registration symmetrically
+    // (V11 D7, same shape as the installer's wizard commit): a non-default
+    // root writes DataDirectory plus DataParentDirectory (the chosen parent),
+    // and a move back to the default clears both - the registration exists
+    // only while the root is not the default (D3 zero-registration default
+    // state), and the parent prefill never outlives the data registration.
     public static void CommitDataRoot(string dataRoot)
     {
         string normalized = Path.GetFullPath(dataRoot);
         if (string.CompareOrdinal(normalized, Path.GetFullPath(DefaultDataRoot)) == 0)
+        {
             store.DeleteValue(DataDirectoryValueName);
+            store.DeleteValue(DataParentValueName);
+        }
         else
+        {
             store.SetString(DataDirectoryValueName, normalized);
+            store.SetString(DataParentValueName, Path.GetDirectoryName(normalized));
+        }
     }
 
     // What the settings dialog needs to know about a finished migration.
