@@ -389,6 +389,11 @@ begin
   // Deletion and registration both hinge on this single predicate.
   Result := False;
   Raw := Trim(Value);
+  // Frozen §7 lexical guard (V11 D6/D-R1), app-side isomorphic: a raw trimmed
+  // value containing ".." anywhere is refused outright - normalization must
+  // never rescue it (AppPaths.IsManagedDataRoot rejects the same substring).
+  if Pos('..', Raw) > 0 then
+    Exit;
   if not IsFullyQualifiedPath(Raw) then
     Exit;
   if CompareText(ExtractFileName(Raw), ManagedRootLeaf) <> 0 then
