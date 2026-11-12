@@ -11,7 +11,8 @@ internal static class AppInfo
     public const string Version = "1.2.0";
     public const string RepoOwner = "Oiawlm";
     public const string RepoName = "OneClickBlackScreen";
-    public const string UpdateAssetName = "OneClickBlackScreen.exe";
+    public const string SetupAssetNamePrefix = "OneClickBlackScreen-Setup-";
+    public const string ChecksumsAssetName = "SHA256SUMS.txt";
 
     // Production endpoint for the releases/latest check. This is the only copy
     // of the host in src/; offline verifiers inject a local base URL through

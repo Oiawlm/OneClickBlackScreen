@@ -7,17 +7,25 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
+using Microsoft.Win32;
 
-// Settings-mode verifier: --settings must open exactly one normal (non-mask)
-// window that can be closed; settings instances are not single-instance gated;
-// unknown arguments must never show any mask window. Since v4 this file is
-// co-compiled with src\ThemePalette.cs and src\SettingsDialogMetrics.cs (D2):
-// colors and layout values stay single-sourced, while the layout algorithm is
-// mirrored here as the observer side of the mirror-lock test (D3, check 6).
-// Since v5 the mirror also covers the idle auto-wake group (V5C) and the
-// update footer (V5B); since v10 the data location section joins (V10 D4):
-// 27 direct children, and the status static is matched by elimination because
-// its text depends on the live silent check.
+// Settings-mode verifier (V11 D2 target split): the settings exe
+// (一键黑屏-设置.exe) opens its window directly with zero arguments - that is
+// the run target for every settings-window check here; the mask exe
+// (一键黑屏.exe) owns the argument dispatch, so the unknown-argument usage-box
+// check runs against it (both paths passed in by verify.cmd). The user's real
+// HKCU Software\BlackScreen key is held aside for the whole child-launch span
+// (V11 改名隔离), so every child resolves only the USERPROFILE-redirected temp
+// root and never the real registered data root. The six checks
+// themselves are unchanged: one closable non-mask window, no single-instance
+// gate, usage dialog for unknown arguments, themed background, Enter contract,
+// geometry mirror. Since v4 this file is co-compiled with src\ThemePalette.cs
+// and src\SettingsDialogMetrics.cs (D2): colors and layout values stay
+// single-sourced, while the layout algorithm is mirrored here as the observer
+// side of the mirror-lock test (D3, check 6). The update footer (V5B) and the
+// data location section (V10 D4) are part of that mirror: 27 direct children,
+// and the status static is matched by elimination because its text depends on
+// the live silent check.
 internal static class VerifySettings
 {
     private const int WM_CLOSE = 0x0010;
@@ -625,6 +633,125 @@ internal static class VerifySettings
             "BlackScreen", "settings.ini");
     }
 
+    // ---- real-key isolation (V11, AGENTS §2 改名隔离) ------------------------
+    // The production AppPaths reads HKCU\Software\BlackScreen directly, and
+    // since V10-S7 the user's real machine carries a live registration
+    // (DataDirectory -> an absolute path) that beats the USERPROFILE-redirected
+    // default root: a launched child would load AND save the user's real
+    // registered data root, and a due LastUpdateCheck stamp would send it
+    // online against the real endpoint. Hold the whole real key under a sibling
+    // name for the duration of this verifier's child launches - children then
+    // resolve the redirected default root and their update marks read dormant -
+    // and put it back in the outermost finally; the key-tree snapshot equality
+    // proves the restore. Throwing from the finally keeps even the restore
+    // path from reporting success with real user state disturbed.
+    private const string HoldKeyLeaf = "BlackScreen-VERIFY-HOLD";
+
+    private static bool HoldRealKey()
+    {
+        using (RegistryKey software = Registry.CurrentUser.OpenSubKey("Software", true))
+        {
+            if (software == null) return false;
+            using (RegistryKey real = software.OpenSubKey("BlackScreen"))
+            {
+                if (real == null) return false; // nothing to hold
+                using (RegistryKey hold = software.CreateSubKey(HoldKeyLeaf))
+                {
+                    CopyTree(real, hold);
+                }
+                software.DeleteSubKeyTree("BlackScreen", false);
+                return true;
+            }
+        }
+    }
+
+    private static void RestoreRealKey()
+    {
+        using (RegistryKey software = Registry.CurrentUser.OpenSubKey("Software", true))
+        {
+            if (software == null) return;
+            using (RegistryKey hold = software.OpenSubKey(HoldKeyLeaf))
+            {
+                if (hold == null) return; // never held or already restored
+                software.DeleteSubKeyTree("BlackScreen", false);
+                using (RegistryKey real = software.CreateSubKey("BlackScreen"))
+                {
+                    CopyTree(hold, real);
+                }
+            }
+            software.DeleteSubKeyTree(HoldKeyLeaf, false);
+        }
+    }
+
+    private static void CopyTree(RegistryKey source, RegistryKey target)
+    {
+        foreach (string name in source.GetValueNames())
+        {
+            target.SetValue(name,
+                source.GetValue(name, null, RegistryValueOptions.DoNotExpandEnvironmentNames),
+                source.GetValueKind(name));
+        }
+        foreach (string subkey in source.GetSubKeyNames())
+        {
+            using (RegistryKey sourceChild = source.OpenSubKey(subkey))
+            using (RegistryKey targetChild = target.CreateSubKey(subkey))
+            {
+                CopyTree(sourceChild, targetChild);
+            }
+        }
+    }
+
+    // A stable, complete dump of the real key tree (same shape as VerifyPaths'):
+    // value names+data and subkey names, sorted, so any write anywhere inside
+    // shows up as a string difference. "<absent>" covers the never-created case.
+    private static string SnapshotRealKey()
+    {
+        using (RegistryKey key = Registry.CurrentUser.OpenSubKey(AppPaths.RegistryRoot))
+        {
+            if (key == null) return "<absent>";
+            StringBuilder builder = new StringBuilder();
+            AppendKey(builder, key, "");
+            return builder.ToString();
+        }
+    }
+
+    private static void AppendKey(StringBuilder builder, RegistryKey key, string prefix)
+    {
+        string[] names = key.GetValueNames();
+        Array.Sort(names, StringComparer.Ordinal);
+        foreach (string name in names)
+            builder.Append(prefix).Append(name).Append('=')
+                .AppendLine(Convert.ToString(key.GetValue(name, ""), System.Globalization.CultureInfo.InvariantCulture));
+        string[] subkeys = key.GetSubKeyNames();
+        Array.Sort(subkeys, StringComparer.Ordinal);
+        foreach (string subkey in subkeys)
+        {
+            using (RegistryKey child = key.OpenSubKey(subkey))
+            {
+                if (child != null) AppendKey(builder, child, prefix + subkey + "\\");
+            }
+        }
+    }
+
+    // The registered data root's ini, resolved from the real key BEFORE the
+    // hold (and again after the restore): with the hold in place no child can
+    // reach this root, and the hash equality proves none did.
+    private static string RegisteredRootIniPath()
+    {
+        try
+        {
+            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(AppPaths.RegistryRoot))
+            {
+                string root = key == null ? null : key.GetValue(AppPaths.DataDirectoryValueName) as string;
+                return root == null ? null : Path.Combine(root, AppPaths.SettingsFileName);
+            }
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private static string Sha256HexOrNull(string path)
     {
         if (!File.Exists(path)) return null;
@@ -936,9 +1063,15 @@ internal static class VerifySettings
     private static int Main(string[] args)
     {
         VerifyGate.Enter();
+        bool held = false;
+        string realKeyBefore = null;
+        string registeredIni = null;
+        string registeredShaBefore = null;
         try
         {
-            Check(args.Length == 1, "Usage: VerifySettings.exe <exe>");
+            Check(args.Length == 2, "Usage: VerifySettings.exe <settings-exe> <mask-exe>");
+            string settingsExe = args[0];
+            string maskExe = args[1];
             // A DPI-aware observer sees the PMv2 settings window in physical pixels
             // (an unaware one gets virtualized coordinates, which would misplace the
             // sampling points of check 4).
@@ -946,14 +1079,22 @@ internal static class VerifySettings
             catch (EntryPointNotFoundException) { SetProcessDPIAware(); }
             string realIni = RealConfigPath();
             string realShaBefore = Sha256HexOrNull(realIni);
+            // Real-key hold (V11): baseline both possible real data roots and the
+            // key tree, then move the key aside - children launch only while the
+            // real registration is out of reach.
+            realKeyBefore = SnapshotRealKey();
+            registeredIni = RegisteredRootIniPath();
+            registeredShaBefore = Sha256HexOrNull(registeredIni);
+            held = HoldRealKey();
             userRoot = Path.Combine(Path.GetTempPath(), "VerifySettings_" + DateTime.Now.Ticks.ToString("x"));
             // The known-folder skeleton the child's GetFolderPath queries validate
             // for existence; the Enter contract's configs land inside it.
             Directory.CreateDirectory(Path.Combine(userRoot, "AppData", "Local"));
             Directory.CreateDirectory(Path.Combine(userRoot, "AppData", "Roaming"));
 
-            // 1. --settings opens exactly one normal window, alive until closed.
-            using (Process process = Start(args[0], "--settings"))
+            // 1. The settings exe opens exactly one normal window directly -
+            // zero arguments (V11 D2); it stays alive until closed.
+            using (Process process = Start(settingsExe, null))
             {
                 try
                 {
@@ -968,15 +1109,15 @@ internal static class VerifySettings
                 }
                 finally { if (!process.HasExited) { process.Kill(); process.WaitForExit(); } }
             }
-            Console.WriteLine("PASS: --settings opened exactly one closable non-mask window, exit code 0");
+            Console.WriteLine("PASS: settings exe opened directly (no arguments) exactly one closable non-mask window, exit code 0");
 
             // 2. Settings mode is not single-instance gated: two instances coexist.
-            Process first = Start(args[0], "--settings");
+            Process first = Start(settingsExe, null);
             Process second = null;
             try
             {
                 Check(first.WaitForInputIdle(5000), "first settings UI did not become ready");
-                second = Start(args[0], "--settings");
+                second = Start(settingsExe, null);
                 Check(second.WaitForInputIdle(5000), "second settings UI did not become ready");
                 Thread.Sleep(300);
                 Check(!first.HasExited && !second.HasExited, "settings instances did not coexist");
@@ -988,10 +1129,12 @@ internal static class VerifySettings
                 if (second != null && !second.HasExited) { second.Kill(); second.WaitForExit(); }
                 if (!first.HasExited) { first.Kill(); first.WaitForExit(); }
             }
-            Console.WriteLine("PASS: two --settings instances coexisted and both closed with exit code 0");
+            Console.WriteLine("PASS: two settings-exe instances coexisted and both closed with exit code 0");
 
-            // 3. Unknown argument shows the usage dialog and never any mask window.
-            using (Process process = Start(args[0], "--bogus"))
+            // 3. Unknown argument shows the usage dialog and never any mask
+            // window - the dispatch contract belongs to the mask exe; the
+            // settings exe ignores every argument it receives (V11 D2).
+            using (Process process = Start(maskExe, "--bogus"))
             {
                 try
                 {
@@ -1013,17 +1156,23 @@ internal static class VerifySettings
             Console.WriteLine("PASS: unknown argument showed usage dialog, zero mask windows, exit code 0");
 
             // 4. The settings background follows the system app theme (read-only).
-            CheckThemeBackground(args[0]);
+            CheckThemeBackground(settingsExe);
 
             // 5. Enter inserts a newline in the text box and still saves on the dialog.
-            CheckEnterContract(args[0]);
+            CheckEnterContract(settingsExe);
 
             // 6. Geometry mirrors SettingsDialogMetrics and the primary button locks Accent.
-            CheckGeometryAndPrimaryColor(args[0]);
+            CheckGeometryAndPrimaryColor(settingsExe);
 
+            // Release the hold, then prove every real state byte-identical; the
+            // finally re-checks the key tree on every exit path (three-state
+            // tripwire, the VerifyPaths pattern).
+            if (held) { RestoreRealKey(); held = false; }
             Check(Sha256HexOrNull(realIni) == realShaBefore,
                 "the user's real settings.ini changed during the run (isolation leak)");
-            Console.WriteLine("PASS Z: user's real settings.ini untouched (SHA-256 before == after)");
+            Check(Sha256HexOrNull(registeredIni) == registeredShaBefore,
+                "the user's registered-root settings.ini changed during the run (isolation leak)");
+            Console.WriteLine("PASS Z: user's real state untouched (default-root ini + registered-root ini + key snapshots)");
             Console.WriteLine("PASS TOTAL: 6 settings checks (3 original + theme background + Enter contract + geometry mirror)");
             return 0;
         }
@@ -1034,6 +1183,11 @@ internal static class VerifySettings
         }
         finally
         {
+            if (held) RestoreRealKey();
+            // Throwing here (not just reporting) keeps even the failure path's
+            // exit code honest when the real key did not come back intact.
+            if (realKeyBefore != null && SnapshotRealKey() != realKeyBefore)
+                throw new Exception("real Software\\BlackScreen key changed across the run (isolation leak)");
             try { if (Directory.Exists(userRoot)) Directory.Delete(userRoot, true); }
             catch { }
         }

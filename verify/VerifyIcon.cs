@@ -6,14 +6,24 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
 
-// Icon verifier: proves the committed .ico artifacts are structurally valid, that
-// the exe embeds the main icon's 256px PNG payload, that the settings.ico managed
-// resource is byte-identical and decodable, and that dist carries the deployed
-// copy (V11). Read-only: no system state is touched.
+// Icon verifier (V11 D2/D9): proves the committed .ico artifacts are
+// structurally valid, that EACH product exe embeds its own artifact's 256px
+// PNG payload and exposes every declared tier through its win32 icon group
+// (PrivateExtractIcons - Icon.ExtractAssociatedIcon's stronger equivalent),
+// and that the settings.ico managed resource (the settings window's title
+// icon) is byte-identical and decodable in BOTH exes. Read-only: no system
+// state is touched.
 internal static class VerifyIcon
 {
     private static void Check(bool condition, string message)
     { if (!condition) throw new Exception(message); }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern uint PrivateExtractIcons(string fileName, int iconIndex,
+        int size, int size2, IntPtr[] icons, int[] ids, uint count, uint flags);
+
+    [DllImport("user32.dll")]
+    private static extern bool DestroyIcon(IntPtr icon);
 
     private sealed class Entry
     {
@@ -28,13 +38,13 @@ internal static class VerifyIcon
         VerifyGate.Enter();
         try
         {
-            Check(args.Length == 1, "Usage: VerifyIcon.exe <exe>");
-            string exe = Path.GetFullPath(args[0]);
-            string dist = Path.GetDirectoryName(exe);
+            Check(args.Length == 2, "Usage: VerifyIcon.exe <mask-exe> <settings-exe>");
+            string maskExe = Path.GetFullPath(args[0]);
+            string settingsExe = Path.GetFullPath(args[1]);
+            string dist = Path.GetDirectoryName(maskExe);
             string repo = Path.GetDirectoryName(dist);
             string mainIco = Path.Combine(repo, "assets", "icon-main.ico");
             string settingsIco = Path.Combine(repo, "assets", "icon-settings.ico");
-            string distIco = Path.Combine(dist, "icon-settings.ico");
 
             // 1. Both .ico files parse: 7 tiers, exact sizes, in-bounds sequential
             //    entries, every entry decodable (DIB full-pixel or PNG).
@@ -43,49 +53,25 @@ internal static class VerifyIcon
             Console.WriteLine("PASS: icon-main.ico structure ok (7 tiers, in-bounds, all entries decodable)");
             Console.WriteLine("PASS: icon-settings.ico structure ok (7 tiers, in-bounds, all entries decodable)");
 
-            // 2. The exe embeds icon-main's 256px PNG payload bytes (positive proof
-            //    that the win32icon is ours; it does not by itself prove the whole
-            //    group - the resource table is covered by check 3's sibling build).
-            byte[] exeBytes = File.ReadAllBytes(exe);
-            byte[] mainBytes = File.ReadAllBytes(mainIco);
-            Entry png256 = mainEntries.Find(delegate(Entry e) { return e.Declared == 256; });
-            Check(png256 != null, "icon-main.ico has no 256 tier");
-            long found = IndexOf(exeBytes, Slice(mainBytes, png256.Offset, png256.Length));
-            Check(found >= 0, "exe does not contain the icon-main 256px PNG payload");
-            Console.WriteLine("PASS: exe embeds icon-main 256px PNG payload (offset " + found + ")");
+            // 2. Each exe embeds its own artifact's 256px PNG payload (positive
+            //    proof that each win32icon is the intended one; the whole group
+            //    is covered by check 4's tier extraction).
+            CheckExeEmbeds256(maskExe, mainIco, mainEntries, "icon-main");
+            CheckExeEmbeds256(settingsExe, settingsIco, settingsEntries, "icon-settings");
 
-            // 3. The settings.ico managed resource: byte-identical to the artifact
-            //    and decodable as an icon.
-            byte[] settingsBytes = File.ReadAllBytes(settingsIco);
-            Assembly assembly = Assembly.ReflectionOnlyLoadFrom(exe);
-            bool named = false;
-            foreach (string name in assembly.GetManifestResourceNames())
-                if (name == "settings.ico") named = true;
-            Check(named, "exe has no managed resource named settings.ico");
-            using (Stream stream = assembly.GetManifestResourceStream("settings.ico"))
-            {
-                Check(stream != null, "settings.ico resource stream is null");
-                byte[] embedded = ReadAll(stream);
-                Check(embedded.Length == settingsBytes.Length,
-                    "settings.ico resource length " + embedded.Length + " != artifact " + settingsBytes.Length);
-                for (int i = 0; i < embedded.Length; i++)
-                    Check(embedded[i] == settingsBytes[i], "settings.ico resource differs at byte " + i);
-                using (MemoryStream decode = new MemoryStream(embedded))
-                using (Icon icon = new Icon(decode))
-                    Check(icon.Width > 0 && icon.Height > 0, "settings.ico resource did not decode");
-            }
-            Console.WriteLine("PASS: settings.ico managed resource byte-identical to artifact and decodable");
+            // 3. The settings.ico managed resource: byte-identical to the
+            //    artifact and decodable as an icon, in BOTH exes (both compile
+            //    SettingsDialog, whose window icon loads this resource).
+            CheckManagedResource(maskExe, settingsIco, "mask exe");
+            CheckManagedResource(settingsExe, settingsIco, "settings exe");
 
-            // 4. dist carries the deployed settings icon, byte-identical.
-            Check(File.Exists(distIco), "dist\\icon-settings.ico missing");
-            byte[] deployed = File.ReadAllBytes(distIco);
-            Check(deployed.Length > 0 && deployed.Length == settingsBytes.Length,
-                "dist\\icon-settings.ico size mismatch");
-            for (int i = 0; i < deployed.Length; i++)
-                Check(deployed[i] == settingsBytes[i], "dist\\icon-settings.ico differs at byte " + i);
-            Console.WriteLine("PASS: dist\\icon-settings.ico deployed byte-identical (" + deployed.Length + " bytes)");
+            // 4. Tier extraction: every tier each artifact declares is
+            //    extractable from the matching exe at its exact size, and the
+            //    shell's associated-icon path resolves too.
+            CheckExeTiers(maskExe, mainEntries, "mask exe", "icon-main");
+            CheckExeTiers(settingsExe, settingsEntries, "settings exe", "icon-settings");
 
-            Console.WriteLine("PASS TOTAL: 4 icon checks");
+            Console.WriteLine("PASS TOTAL: 4 icon checks (artifacts + per-exe payloads + managed resource + per-exe tiers)");
             return 0;
         }
         catch (Exception ex)
@@ -93,6 +79,72 @@ internal static class VerifyIcon
             Console.Error.WriteLine("FAIL: " + ex.Message);
             return 1;
         }
+    }
+
+    // The exe embeds the artifact's 256px PNG payload bytes - positive proof
+    // that the win32icon compiled in is the intended artifact.
+    private static void CheckExeEmbeds256(string exe, string icoPath, List<Entry> entries, string artifactLabel)
+    {
+        byte[] exeBytes = File.ReadAllBytes(exe);
+        byte[] icoBytes = File.ReadAllBytes(icoPath);
+        Entry png256 = entries.Find(delegate(Entry e) { return e.Declared == 256; });
+        Check(png256 != null, icoPath + " has no 256 tier");
+        long found = IndexOf(exeBytes, Slice(icoBytes, png256.Offset, png256.Length));
+        Check(found >= 0, exe + " does not contain the " + artifactLabel + " 256px PNG payload");
+        Console.WriteLine("PASS: " + Path.GetFileName(exe) + " embeds " + artifactLabel
+            + " 256px PNG payload (offset " + found + ")");
+    }
+
+    // The settings.ico managed resource: byte-identical and decodable.
+    private static void CheckManagedResource(string exe, string settingsIco, string label)
+    {
+        byte[] settingsBytes = File.ReadAllBytes(settingsIco);
+        Assembly assembly = Assembly.ReflectionOnlyLoadFrom(exe);
+        bool named = false;
+        foreach (string name in assembly.GetManifestResourceNames())
+            if (name == "settings.ico") named = true;
+        Check(named, label + " has no managed resource named settings.ico");
+        using (Stream stream = assembly.GetManifestResourceStream("settings.ico"))
+        {
+            Check(stream != null, "settings.ico resource stream is null in " + label);
+            byte[] embedded = ReadAll(stream);
+            Check(embedded.Length == settingsBytes.Length,
+                label + " settings.ico resource length " + embedded.Length + " != artifact " + settingsBytes.Length);
+            for (int i = 0; i < embedded.Length; i++)
+                Check(embedded[i] == settingsBytes[i], label + " settings.ico resource differs at byte " + i);
+            using (MemoryStream decode = new MemoryStream(embedded))
+            using (Icon icon = new Icon(decode))
+                Check(icon.Width > 0 && icon.Height > 0, label + " settings.ico resource did not decode");
+        }
+        Console.WriteLine("PASS: " + label + " settings.ico managed resource byte-identical to artifact and decodable");
+    }
+
+    // Every tier the artifact declares must extract from the exe's win32 icon
+    // group at exactly that size (PrivateExtractIcons resolves the group the
+    // same way the shell does), and the associated-icon fallback must resolve.
+    private static void CheckExeTiers(string exe, List<Entry> entries, string label, string artifactLabel)
+    {
+        foreach (Entry entry in entries)
+        {
+            IntPtr[] icons = new IntPtr[1];
+            int[] ids = new int[1];
+            uint extracted = PrivateExtractIcons(exe, 0, entry.Declared, entry.Declared, icons, ids, 1, 0);
+            Check(extracted >= 1 && icons[0] != IntPtr.Zero,
+                label + " win32 icon group does not expose the " + artifactLabel + " " + entry.Declared + " tier");
+            using (Icon icon = Icon.FromHandle(icons[0]))
+            {
+                // FromHandle does not own the handle; DestroyIcon below frees it.
+                Check(icon.Width == entry.Declared && icon.Height == entry.Declared,
+                    label + " " + artifactLabel + " " + entry.Declared + " tier extracted as "
+                    + icon.Width + "x" + icon.Height);
+            }
+            DestroyIcon(icons[0]);
+        }
+        using (Icon associated = Icon.ExtractAssociatedIcon(exe))
+            Check(associated != null && associated.Width > 0 && associated.Height > 0,
+                label + " has no extractable associated icon");
+        Console.WriteLine("PASS: " + label + " exposes every " + artifactLabel
+            + " tier via the win32 icon group (7 tiers, exact sizes, associated icon ok)");
     }
 
     private static List<Entry> ParseIcon(string path)
