@@ -8,7 +8,7 @@ using System;
 
 internal static class AppInfo
 {
-    public const string Version = "1.2.0";
+    public const string Version = "1.3.0";
     public const string RepoOwner = "Oiawlm";
     public const string RepoName = "OneClickBlackScreen";
     public const string SetupAssetNamePrefix = "OneClickBlackScreen-Setup-";
